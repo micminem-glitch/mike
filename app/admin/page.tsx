@@ -92,35 +92,41 @@ export default function AdminDashboard() {
     return match ? match.email : 'Legacy Account';
   };
 
-  const handleBalanceAdjustment = async (e: React.FormEvent) => {
+const handleBalanceAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetUserId || !adjustmentAmount) return;
 
     setActionLoading(true);
     setAdminMessage(null);
 
-    const finalAmount = parseFloat(adjustmentAmount);
+    try {
+      // Hit our new secure backend route instead of the client-side SDK directly
+      const response = await fetch('/api/admin/adjust-balance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          targetUserId,
+          amount: adjustmentAmount,
+          adjustmentType,
+          recipientAccount: adjustmentType === 'Online Deposit' ? 'ADMIN CREDIT INJECTION' : 'ADMIN DEBIT OVERRIDE',
+        }),
+      });
 
-    const { error } = await supabase
-      .from('transactions')
-      .insert([
-        {
-          user_id: targetUserId,
-          amount: finalAmount,
-          type: adjustmentType,
-          recipient_account: adjustmentType === 'Online Deposit' ? 'ADMIN CREDIT INJECTION' : 'ADMIN DEBIT OVERRIDE',
-          status: 'Settled'
-        }
-      ]);
+      const result = await response.json();
 
-    setActionLoading(false);
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to complete adjustment override.');
+      }
 
-    if (error) {
-      setAdminMessage({ type: 'error', text: `Adjustment failed: ${error.message}` });
-    } else {
       setAdminMessage({ type: 'success', text: `Successfully applied adjustment to ${selectedEmail || targetUserId}` });
       setAdjustmentAmount('');
       loadMasterLedger();
+    } catch (error: any) {
+      setAdminMessage({ type: 'error', text: `Adjustment failed: ${error.message}` });
+    } finally {
+      setActionLoading(false);
     }
   };
 
