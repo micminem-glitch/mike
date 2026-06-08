@@ -60,9 +60,15 @@ export default function AdminDashboard() {
   async function loadMasterLedger() {
     setLoading(true);
     
-    // Grab user account definitions via secure view
-    const { data: usersData } = await supabase.from('user_registry').select('*');
-    setUserList(usersData || []);
+    // 🔥 UPDATED: Read from the safe public profiles table instead of the restricted view
+    const { data: usersData, error: userError } = await supabase
+      .from('profiles')
+      .select('user_id:id, email');
+      
+    if (!userError && usersData) {
+      // Formats the structure cleanly to match our existing code properties
+      setUserList(usersData as unknown as UserMap[]);
+    }
 
     // Grab entire transaction array logs
     const { data: txData, error } = await supabase
