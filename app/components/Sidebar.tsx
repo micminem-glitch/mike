@@ -18,15 +18,16 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const navItems = [
-  { icon: <LayoutDashboard size={20} />, label: "Overview", href: "/" },
-  { icon: <ArrowUpRight size={20} />, label: "Online Deposit", href: "/deposit" },
-  { icon: <ArrowDownLeft size={20} />, label: "Domestic Transfer", href: "/transfer" },
-  { icon: <CreditCard size={20} />, label: "Virtual Card", href: "/cards" },
-  { icon: <Briefcase size={20} />, label: "Loan & Mortgages", href: "/loans" },
-  { icon: <History size={20} />, label: "Transaction Logs", href: "/logs" },
-  { icon: <Download size={20} />, label: "Withdrawal", href: "/withdrawal" },
-  { icon: <User size={20} />, label: "Account Manager", href: "/account" },
-];
+    // Updated only this row: changed label and pointed href to /overview
+    { icon: <LayoutDashboard size={20} />, label: "Dashboard", href: "/overview" },
+    { icon: <ArrowUpRight size={20} />, label: "Online Deposit", href: "/deposit" },
+    { icon: <ArrowDownLeft size={20} />, label: "Domestic Transfer", href: "/transfer" },
+    { icon: <CreditCard size={20} />, label: "Virtual Card", href: "/cards" },
+    { icon: <Briefcase size={20} />, label: "Loan & Mortgages", href: "/loans" },
+    { icon: <History size={20} />, label: "Transaction Logs", href: "/logs" },
+    { icon: <Download size={20} />, label: "Withdrawal", href: "/withdrawal" },
+    { icon: <User size={20} />, label: "Account Manager", href: "/account" },
+  ];
 
   return (
     <aside className="w-64 bg-[#0d1b2a] text-slate-300 flex flex-col hidden md:flex h-screen sticky top-0">
