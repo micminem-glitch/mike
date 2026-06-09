@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [gatekeeperError, setGatekeeperError] = useState('');
 
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [userList, setUserList] = useState<UserMap[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -45,7 +46,6 @@ export default function AdminDashboard() {
   // Verification routine for Admin Passcode
   const handleVerifyPasscode = (e: React.FormEvent) => {
     e.preventDefault();
-    // SET YOUR CUSTOM ADMIN PASSWORD HERE
     const MASTER_ADMIN_PASS = "HexafoxAdmin2026!"; 
 
     if (passcodeInput === MASTER_ADMIN_PASS) {
@@ -57,16 +57,15 @@ export default function AdminDashboard() {
     }
   };
 
-  async function loadMasterLedger() {
+  async function loadMasterLedger(forcedFilterId?: string) {
     setLoading(true);
     
-    // 🔥 UPDATED: Read from the safe public profiles table instead of the restricted view
+    // Read from the safe public profiles table instead of the restricted view
     const { data: usersData, error: userError } = await supabase
       .from('profiles')
       .select('user_id:id, email');
       
     if (!userError && usersData) {
-      // Formats the structure cleanly to match our existing code properties
       setUserList(usersData as unknown as UserMap[]);
     }
 
@@ -78,13 +77,36 @@ export default function AdminDashboard() {
 
     if (!error && txData) {
       setAllTransactions(txData);
+      
+      // Keep tracking the active filtered view if refreshing after an update
+      const activeFilterId = forcedFilterId !== undefined ? forcedFilterId : targetUserId;
+      if (activeFilterId) {
+        setFilteredTransactions(txData.filter(tx => tx.user_id === activeFilterId));
+      } else {
+        setFilteredTransactions(txData);
+      }
     }
     setLoading(false);
   }
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadMasterLedger();
+    }
+  }, [isAuthenticated]);
+
+  // Click handler to selectively filter rows instantly
   const selectTargetUser = (uid: string, emailStr: string) => {
     setTargetUserId(uid);
     setSelectedEmail(emailStr);
+    setFilteredTransactions(allTransactions.filter(tx => tx.user_id === uid));
+  };
+
+  // Helper to clear filter parameters back to complete overview feed
+  const clearUserFilter = () => {
+    setTargetUserId('');
+    setSelectedEmail('');
+    setFilteredTransactions(allTransactions);
   };
 
   const getEmailFromId = (uid: string) => {
@@ -92,7 +114,7 @@ export default function AdminDashboard() {
     return match ? match.email : 'Legacy Account';
   };
 
-const handleBalanceAdjustment = async (e: React.FormEvent) => {
+  const handleBalanceAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetUserId || !adjustmentAmount) return;
 
@@ -100,7 +122,7 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
     setAdminMessage(null);
 
     try {
-      // Hit our new secure backend route instead of the client-side SDK directly
+      // Hit our secure serverless backend route instead of the client-side SDK directly
       const response = await fetch('/api/admin/adjust-balance', {
         method: 'POST',
         headers: {
@@ -122,7 +144,9 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
 
       setAdminMessage({ type: 'success', text: `Successfully applied adjustment to ${selectedEmail || targetUserId}` });
       setAdjustmentAmount('');
-      loadMasterLedger();
+      
+      // Reload history while retaining the filtered selection profile context
+      await loadMasterLedger(targetUserId);
     } catch (error: any) {
       setAdminMessage({ type: 'error', text: `Adjustment failed: ${error.message}` });
     } finally {
@@ -203,7 +227,7 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* LEFT PANEL: SELECT ACCOUNTS BY EMAIL & EDIT */}
+        {/* LEFT PANEL */}
         <div className="lg:col-span-4 space-y-6">
           
           {/* USER EMAIL SELECTOR LIST */}
@@ -239,7 +263,7 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
             )}
           </div>
 
-          {/* BALANCE INJECTION / DEDUCTION LOGIC */}
+          {/* BALANCE PARAMETERS */}
           <div className="bg-[#0b132b] p-6 rounded-2xl border border-slate-800 shadow-xl">
             <h3 className="font-bold text-sm mb-4 text-slate-200">Modify Balance Parameters</h3>
             
@@ -293,7 +317,7 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
             </form>
           </div>
 
-          {/* EDIT ACCOUNT PROFILE CONFIGURATION */}
+          {/* EDIT NODE PROPERTIES */}
           <div className="bg-[#0b132b] p-6 rounded-2xl border border-slate-800 shadow-xl">
             <h3 className="font-bold text-sm mb-4 text-slate-200">Edit Node Properties</h3>
             
@@ -340,10 +364,24 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
 
         </div>
 
-        {/* RIGHT PANEL: FULL TRANSACTION REAL-TIME FEED */}
+        {/* RIGHT PANEL: TRANSACTION HISTORY TRACE */}
         <div className="lg:col-span-8 bg-[#0b132b] p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col justify-between">
           <div>
-            <h3 className="font-bold text-sm mb-4 text-slate-200">Global Ledger Stream Trace</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-sm text-slate-200">
+                {selectedEmail ? `Ledger Feed Stream: ${selectedEmail}` : "Global Ledger Stream Trace"}
+              </h3>
+              {targetUserId && (
+                <button
+                  type="button"
+                  onClick={clearUserFilter}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all border border-slate-700"
+                >
+                  Reset Feed (Show All)
+                </button>
+              )}
+            </div>
+
             {adminMessage && (
               <div className={`p-3 rounded-xl text-xs mb-4 ${adminMessage.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                 {adminMessage.text}
@@ -351,7 +389,9 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
             )}
             
             {loading ? (
-              <p className="text-sm text-slate-500 animate-pulse">Running full-network array query...</p>
+              <p className="text-sm text-slate-500 animate-pulse">Running array query sync...</p>
+            ) : filteredTransactions.length === 0 ? (
+              <p className="text-xs text-slate-500 py-8 text-center bg-black/20 rounded-xl border border-dashed border-slate-800">No transaction logs matching this account signature.</p>
             ) : (
               <div className="overflow-x-auto max-h-[640px] overflow-y-auto">
                 <table className="w-full text-left text-xs text-slate-300">
@@ -364,7 +404,7 @@ const handleBalanceAdjustment = async (e: React.FormEvent) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {allTransactions.map((tx) => {
+                    {filteredTransactions.map((tx) => {
                       const isDeposit = tx.type === 'Online Deposit';
                       const accountEmail = getEmailFromId(tx.user_id);
 
