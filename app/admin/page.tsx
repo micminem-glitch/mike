@@ -60,13 +60,18 @@ export default function AdminDashboard() {
   async function loadMasterLedger(forcedFilterId?: string) {
     setLoading(true);
     
-    // Read from the safe public profiles table instead of the restricted view
+    // Read clean structural parameters directly from the public profiles table
     const { data: usersData, error: userError } = await supabase
       .from('profiles')
-      .select('user_id:id, email');
+      .select('id, email');
       
     if (!userError && usersData) {
-      setUserList(usersData as unknown as UserMap[]);
+      // Create an explicitly mapped array matching the UserMap interface structure
+      const formattedUsers: UserMap[] = usersData.map((u: any) => ({
+        user_id: u.id,
+        email: u.email
+      }));
+      setUserList(formattedUsers);
     }
 
     // Grab entire transaction array logs
@@ -78,7 +83,7 @@ export default function AdminDashboard() {
     if (!error && txData) {
       setAllTransactions(txData);
       
-      // Keep tracking the active filtered view if refreshing after an update
+      // Determine the active selection target to preserve the filter window seamlessly
       const activeFilterId = forcedFilterId !== undefined ? forcedFilterId : targetUserId;
       if (activeFilterId) {
         setFilteredTransactions(txData.filter(tx => tx.user_id === activeFilterId));
@@ -122,7 +127,7 @@ export default function AdminDashboard() {
     setAdminMessage(null);
 
     try {
-      // Hit our secure serverless backend route instead of the client-side SDK directly
+      // Hit secure serverless API endpoint
       const response = await fetch('/api/admin/adjust-balance', {
         method: 'POST',
         headers: {
@@ -145,7 +150,7 @@ export default function AdminDashboard() {
       setAdminMessage({ type: 'success', text: `Successfully applied adjustment to ${selectedEmail || targetUserId}` });
       setAdjustmentAmount('');
       
-      // Reload history while retaining the filtered selection profile context
+      // Reload history logs while keeping the filtered context window open
       await loadMasterLedger(targetUserId);
     } catch (error: any) {
       setAdminMessage({ type: 'error', text: `Adjustment failed: ${error.message}` });
