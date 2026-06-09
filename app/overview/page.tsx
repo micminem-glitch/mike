@@ -11,32 +11,27 @@ export default function Dashboard() {
   const [userEmail, setUserEmail] = useState('Loading...');
   const router = useRouter();
 
-  // Re-added your baseline static account metrics securely here
   const accountMetrics = {
     pending: "0.00",
     myLoan: "0",
     accountLimit: "2,000,000.00",
     lastLoginIp: "94.59.104.73",
-    lastLoginDate: "2026-06-08 08:25:11" // Updated timestamp matching active session run
+    lastLoginDate: "2026-06-08 08:25:11"
   };
 
   const chartData = [60, 40, 70, 50, 90, 30, 80];
 
   useEffect(() => {
     async function calculateRealBalance() {
-      // 1. Get current logged-in user session
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        // If no user session exists, boot them to log in securely
         router.push('/login');
         return;
       }
 
-      // Display the actual logged-in user string on the metric panel card
       setUserEmail(user.email || 'Secure Vault Account');
 
-      // 2. Fetch only this user's transaction data
       const { data, error } = await supabase
         .from('transactions')
         .select('amount, type')
@@ -68,7 +63,6 @@ export default function Dashboard() {
     calculateRealBalance();
   }, [router]);
 
-  // Quick action method to switch user profiles cleanly
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
@@ -76,8 +70,7 @@ export default function Dashboard() {
 
   return (
     /* MASTER LAYOUT CONTAINER WRAPPER
-      FIX: Removed the conflicting outer spacing paddings (like pt-20).
-      This allows your global layout sidebars to pin correctly without pushing gaps.
+       FIX: Changed padding layout properties so it fits beautifully underneath the layout navbar header.
     */
     <div className="w-full min-h-screen bg-slate-950 p-4 sm:p-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
