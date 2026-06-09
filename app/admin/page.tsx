@@ -166,7 +166,7 @@ export default function AdminDashboard() {
   // IF NOT AUTHENTICATED: RENDER GATEKEEPER PASSCODE FORM
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 text-white font-sans">
+      <div className="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4 text-white font-sans">
         <div className="w-full max-w-md bg-[#0b132b] border border-red-900/40 p-8 rounded-2xl shadow-2xl space-y-6">
           <div className="text-center space-y-2">
             <h2 className="text-sm font-black uppercase tracking-widest text-red-500">Secure Network Layer</h2>
@@ -205,9 +205,9 @@ export default function AdminDashboard() {
     );
   }
 
-  // IF AUTHENTICATED: RENDER SYSTEM WORKSTATION ONLY
+  // IF AUTHENTICATED: RENDER SYSTEM WORKSTATION
   return (
-    <div className="w-full min-h-screen bg-slate-950 text-white p-4 sm:p-6 space-y-6 pt-16 md:pt-6">
+    <div className="fixed inset-y-0 right-0 left-0 md:static overflow-y-auto bg-slate-950 text-white p-4 sm:p-6 space-y-6 pt-16 md:pt-6 z-10">
       
       {/* HEADER TOP BANNER */}
       <div className="bg-gradient-to-r from-red-950/40 to-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
