@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { ChevronDown, RefreshCw, FilterX, Users, Layers, ShieldCheck } from 'lucide-react';
 
 interface Transaction {
   id: string;
@@ -28,6 +29,9 @@ export default function AdminDashboard() {
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [userList, setUserList] = useState<UserMap[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Mobile UI States
+  const [isMobileUserListOpen, setIsMobileUserListOpen] = useState(false);
   
   // Balance Modification States
   const [targetUserId, setTargetUserId] = useState('');
@@ -60,18 +64,13 @@ export default function AdminDashboard() {
   async function loadMasterLedger(forcedFilterId?: string) {
     setLoading(true);
     
-    // Read clean structural parameters directly from the public profiles table
+    // Read from the safe public profiles table instead of the restricted view
     const { data: usersData, error: userError } = await supabase
       .from('profiles')
-      .select('id, email');
+      .select('user_id:id, email');
       
     if (!userError && usersData) {
-      // Create an explicitly mapped array matching the UserMap interface structure
-      const formattedUsers: UserMap[] = usersData.map((u: any) => ({
-        user_id: u.id,
-        email: u.email
-      }));
-      setUserList(formattedUsers);
+      setUserList(usersData as unknown as UserMap[]);
     }
 
     // Grab entire transaction array logs
@@ -83,7 +82,7 @@ export default function AdminDashboard() {
     if (!error && txData) {
       setAllTransactions(txData);
       
-      // Determine the active selection target to preserve the filter window seamlessly
+      // Keep tracking the active filtered view if refreshing after an update
       const activeFilterId = forcedFilterId !== undefined ? forcedFilterId : targetUserId;
       if (activeFilterId) {
         setFilteredTransactions(txData.filter(tx => tx.user_id === activeFilterId));
@@ -127,7 +126,6 @@ export default function AdminDashboard() {
     setAdminMessage(null);
 
     try {
-      // Hit secure serverless API endpoint
       const response = await fetch('/api/admin/adjust-balance', {
         method: 'POST',
         headers: {
@@ -150,7 +148,6 @@ export default function AdminDashboard() {
       setAdminMessage({ type: 'success', text: `Successfully applied adjustment to ${selectedEmail || targetUserId}` });
       setAdjustmentAmount('');
       
-      // Reload history logs while keeping the filtered context window open
       await loadMasterLedger(targetUserId);
     } catch (error: any) {
       setAdminMessage({ type: 'error', text: `Adjustment failed: ${error.message}` });
@@ -215,19 +212,64 @@ export default function AdminDashboard() {
 
   // IF AUTHENTICATED: RENDER SYSTEM WORKSTATION
   return (
-    <div className="space-y-8 w-full min-h-screen bg-slate-950 p-6 text-white font-sans">
+    <div className="space-y-6 w-full min-h-screen bg-slate-950 p-4 sm:p-6 text-white font-sans">
+      
       {/* HEADER TOP BANNER */}
-      <div className="bg-gradient-to-r from-red-950/40 to-slate-900 border border-red-900/40 p-6 rounded-2xl flex justify-between items-center">
+      <div className="bg-gradient-to-r from-red-950/40 to-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div>
-          <h2 className="text-xl font-black tracking-wide uppercase text-red-400">Hexafox Executive Master Terminal</h2>
-          <p className="text-slate-400 text-sm">System-wide transactional overrides, account metric manipulation, and user ledger configurations.</p>
+          <h2 className="text-lg sm:text-xl font-black tracking-wide uppercase text-red-400 flex items-center gap-2">
+            <ShieldCheck className="text-red-500 shrink-0" size={20} /> Mikes Finance Master Control
+          </h2>
+          <p className="text-slate-400 text-xs sm:text-sm mt-1">System-wide transactional overrides, metric configurations, and absolute database indexing.</p>
         </div>
         <button 
           onClick={() => setIsAuthenticated(false)}
-          className="bg-slate-900 hover:bg-slate-800 border border-slate-800 px-4 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white"
+          className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 border border-slate-800 px-4 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white"
         >
           Lock Terminal
         </button>
+      </div>
+
+      {/* MOBILE ADAPTIVE ADAPTIVE USER DROP PANEL (VISIBLE ON MOBILE ONLY) */}
+      <div className="lg:hidden w-full bg-[#0b132b] border border-slate-800 rounded-2xl p-4 shadow-xl">
+        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+          <Users size={12} /> Live User Selection Target
+        </label>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsMobileUserListOpen(!isMobileUserListOpen)}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-left text-slate-200 flex justify-between items-center font-medium"
+          >
+            <span className="truncate">
+              {selectedEmail ? selectedEmail : "Displaying All Connected Users"}
+            </span>
+            <ChevronDown size={14} className={`text-slate-400 transition-transform ${isMobileUserListOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isMobileUserListOpen && (
+            <div className="absolute left-0 right-0 mt-2 bg-[#0b132b] border border-slate-800 rounded-xl shadow-2xl z-30 p-1 divide-y divide-slate-800/40 max-h-[260px] overflow-y-auto">
+              <button
+                onClick={() => { clearUserFilter(); setIsMobileUserListOpen(false); }}
+                className="w-full text-left px-3 py-2.5 text-xs text-red-400 font-bold hover:bg-black/20 rounded-lg flex items-center gap-1.5"
+              >
+                <FilterX size={12} /> Reset System Boundaries (Show All)
+              </button>
+              {userList.map((usr) => (
+                <button
+                  key={usr.user_id}
+                  onClick={() => { selectTargetUser(usr.user_id, usr.email); setIsMobileUserListOpen(false); }}
+                  className={`w-full text-left px-3 py-2.5 text-xs transition-colors rounded-lg flex flex-col ${
+                    targetUserId === usr.user_id ? 'bg-blue-600/20 text-blue-400 font-bold' : 'text-slate-300 hover:bg-black/20'
+                  }`}
+                >
+                  <span className="truncate">{usr.email}</span>
+                  <span className="text-[9px] font-mono text-slate-500 mt-0.5">{usr.user_id}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -235,17 +277,17 @@ export default function AdminDashboard() {
         {/* LEFT PANEL */}
         <div className="lg:col-span-4 space-y-6">
           
-          {/* USER EMAIL SELECTOR LIST */}
-          <div className="bg-[#0b132b] p-6 rounded-2xl border border-slate-800 shadow-xl">
-            <h3 className="font-bold text-sm mb-1 text-slate-200">Registered Accounts</h3>
+          {/* USER EMAIL SELECTOR LIST (HIDDEN ON MOBILE, PERFECT ON DESKTOP) */}
+          <div className="hidden lg:block bg-[#0b132b] p-6 rounded-2xl border border-slate-800 shadow-xl">
+            <h3 className="font-bold text-sm mb-1 text-slate-200 flex items-center gap-1.5"><Users size={15} /> Registered Accounts</h3>
             <p className="text-xs text-slate-500 mb-4">Click any email address below to control parameters:</p>
             
             {loading ? (
-              <p className="text-xs text-slate-500 animate-pulse">Syncing user directory...</p>
+              <p className="text-xs text-slate-500 animate-pulse flex items-center gap-2"><RefreshCw size={12} className="animate-spin" /> Syncing user directory...</p>
             ) : userList.length === 0 ? (
               <p className="text-xs text-slate-500">No active users found.</p>
             ) : (
-              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                 {userList.map((usr) => (
                   <button
                     key={usr.user_id}
@@ -253,7 +295,7 @@ export default function AdminDashboard() {
                     onClick={() => selectTargetUser(usr.user_id, usr.email)}
                     className={`w-full text-left p-2.5 rounded-xl border transition-all flex justify-between items-center ${
                       targetUserId === usr.user_id 
-                        ? 'bg-blue-600/20 border-blue-500 text-blue-400 font-bold' 
+                        ? 'bg-blue-600/20 border-blue-500 text-blue-400 font-bold shadow-[0_0_12px_rgba(37,99,235,0.1)]' 
                         : 'bg-black/30 border-slate-800 hover:border-slate-700 text-slate-300'
                     }`}
                   >
@@ -277,14 +319,14 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setAdjustmentType('Online Deposit')}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Online Deposit' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Online Deposit' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
                 >
                   ➕ Inject ($+)
                 </button>
                 <button
                   type="button"
                   onClick={() => setAdjustmentType('Admin Deduction')}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Admin Deduction' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Admin Deduction' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
                 >
                   ➖ Minus ($-)
                 </button>
@@ -295,8 +337,8 @@ export default function AdminDashboard() {
                 <input 
                   type="text"
                   value={selectedEmail ? `${selectedEmail} [${targetUserId.slice(0,6)}]` : ''}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 font-medium cursor-not-allowed"
-                  placeholder="Click a user email account above..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 font-medium cursor-not-allowed truncate"
+                  placeholder="Click a user account pointer..."
                   disabled
                   required
                 />
@@ -307,7 +349,7 @@ export default function AdminDashboard() {
                   type="number"
                   value={adjustmentAmount}
                   onChange={(e) => setAdjustmentAmount(e.target.value)}
-                  className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white placeholder-slate-500"
+                  className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none"
                   placeholder="0.00"
                   required
                 />
@@ -315,7 +357,7 @@ export default function AdminDashboard() {
               <button 
                 type="submit"
                 disabled={actionLoading || !targetUserId}
-                className={`w-full font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all disabled:bg-slate-800 disabled:text-slate-600 ${adjustmentType === 'Online Deposit' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
+                className={`w-full font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all disabled:bg-slate-800 disabled:text-slate-600 ${adjustmentType === 'Online Deposit' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-950/20' : 'bg-red-600 hover:bg-red-700 shadow-red-950/20'}`}
               >
                 {actionLoading ? 'Executing Change Override...' : 'Execute Balance Shift'}
               </button>
@@ -350,7 +392,7 @@ export default function AdminDashboard() {
                 <select
                   value={customStatus}
                   onChange={(e) => setCustomStatus(e.target.value)}
-                  className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white outline-none"
+                  className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white outline-none cursor-pointer"
                 >
                   <option value="Active">🟢 Active / Enforced Tunnel</option>
                   <option value="Suspended">🟡 Verification Hold</option>
@@ -370,17 +412,18 @@ export default function AdminDashboard() {
         </div>
 
         {/* RIGHT PANEL: TRANSACTION HISTORY TRACE */}
-        <div className="lg:col-span-8 bg-[#0b132b] p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col justify-between">
+        <div className="lg:col-span-8 bg-[#0b132b] p-4 sm:p-6 rounded-2xl border border-slate-800 shadow-xl flex flex-col justify-between">
           <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-sm text-slate-200">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
+                <Layers size={14} className="text-blue-400" />
                 {selectedEmail ? `Ledger Feed Stream: ${selectedEmail}` : "Global Ledger Stream Trace"}
               </h3>
               {targetUserId && (
                 <button
                   type="button"
                   onClick={clearUserFilter}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all border border-slate-700"
+                  className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all border border-slate-700 text-center"
                 >
                   Reset Feed (Show All)
                 </button>
@@ -394,44 +437,46 @@ export default function AdminDashboard() {
             )}
             
             {loading ? (
-              <p className="text-sm text-slate-500 animate-pulse">Running array query sync...</p>
+              <p className="text-sm text-slate-500 animate-pulse flex items-center gap-2"><RefreshCw size={14} className="animate-spin" /> Running array query sync...</p>
             ) : filteredTransactions.length === 0 ? (
-              <p className="text-xs text-slate-500 py-8 text-center bg-black/20 rounded-xl border border-dashed border-slate-800">No transaction logs matching this account signature.</p>
+              <p className="text-xs text-slate-500 py-12 text-center bg-black/20 rounded-xl border border-dashed border-slate-800">No transaction logs matching this account signature.</p>
             ) : (
-              <div className="overflow-x-auto max-h-[640px] overflow-y-auto">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-[#111a36] text-slate-400 font-semibold sticky top-0">
-                    <tr>
-                      <th className="p-3">User Email Identity</th>
-                      <th className="p-3">Type Classification</th>
-                      <th className="p-3">Delta Value</th>
-                      <th className="p-3">Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {filteredTransactions.map((tx) => {
-                      const isDeposit = tx.type === 'Online Deposit';
-                      const accountEmail = getEmailFromId(tx.user_id);
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="inline-block min-w-full align-middle p-4 sm:p-0">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-[#111a36] text-slate-400 font-semibold sticky top-0">
+                      <tr>
+                        <th className="p-3">User Email Identity</th>
+                        <th className="p-3">Type Classification</th>
+                        <th className="p-3">Delta Value</th>
+                        <th className="p-3 hidden md:table-cell">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {filteredTransactions.map((tx) => {
+                        const isDeposit = tx.type === 'Online Deposit';
+                        const accountEmail = getEmailFromId(tx.user_id);
 
-                      return (
-                        <tr key={tx.id} className="hover:bg-slate-900/40">
-                          <td className="p-3 font-medium text-slate-300 bg-slate-950/20" title={tx.user_id || ''}>
-                            {accountEmail}
-                          </td>
-                          <td className="p-3 font-medium">
-                            <span className={isDeposit ? 'text-emerald-400' : 'text-slate-300'}>
-                              {tx.type}
-                            </span>
-                          </td>
-                          <td className={`p-3 font-bold ${isDeposit ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {isDeposit ? '+' : '-'}${Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="p-3 text-slate-500">{new Date(tx.created_at).toLocaleDateString()}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        return (
+                          <tr key={tx.id} className="hover:bg-slate-900/40 transition-colors">
+                            <td className="p-3 font-medium text-slate-300 max-w-[140px] sm:max-w-none truncate" title={accountEmail}>
+                              {accountEmail}
+                            </td>
+                            <td className="p-3 font-medium">
+                              <span className={isDeposit ? 'text-emerald-400' : 'text-slate-400'}>
+                                {tx.type}
+                              </span>
+                            </td>
+                            <td className={`p-3 font-bold ${isDeposit ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {isDeposit ? '+' : '-'}${Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-3 text-slate-500 hidden md:table-cell">{new Date(tx.created_at).toLocaleDateString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
