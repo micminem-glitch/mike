@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Admin Client
+// Note: Ensure your Supabase client setup matches your folder structure.
+// If your lib folder is in the root, the path might be '../../../lib/supabase' 
+// or '../lib/supabase' depending on where 'lib' is located.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Ensure this is set in your .env
+  process.env.SUPABASE_SERVICE_ROLE_KEY! 
 );
 
 export async function POST(req: Request) {
