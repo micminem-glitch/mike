@@ -61,6 +61,7 @@ export default function AdminDashboard() {
     }
   };
 
+  // FIX: Clear the parameter boundaries so it naturally defaults to fetching everything unless told otherwise
   async function loadMasterLedger(forcedFilterId?: string) {
     setLoading(true);
     
@@ -80,11 +81,13 @@ export default function AdminDashboard() {
     if (!error && txData) {
       setAllTransactions(txData);
       
-      const activeFilterId = forcedFilterId !== undefined ? forcedFilterId : targetUserId;
-      if (activeFilterId) {
-        setFilteredTransactions(txData.filter(tx => tx.user_id === activeFilterId));
+      // Determine filter target explicitly based on what was passed or currently selected
+      const currentFilterTarget = forcedFilterId !== undefined ? forcedFilterId : targetUserId;
+      
+      if (currentFilterTarget) {
+        setFilteredTransactions(txData.filter(tx => tx.user_id === currentFilterTarget));
       } else {
-        setFilteredTransactions(txData);
+        setFilteredTransactions(txData); // Shows all transactions globally
       }
     }
     setLoading(false);
@@ -105,7 +108,7 @@ export default function AdminDashboard() {
   const clearUserFilter = () => {
     setTargetUserId('');
     setSelectedEmail('');
-    setFilteredTransactions(allTransactions);
+    setFilteredTransactions(allTransactions); // Snaps back to displaying all logs
   };
 
   const getEmailFromId = (uid: string) => {
@@ -114,7 +117,7 @@ export default function AdminDashboard() {
   };
 
   const handleBalanceAdjustment = async (e: React.FormEvent) => {
-    e.preventDefault();
+    prefillDefaults(e);
     if (!targetUserId || !adjustmentAmount) return;
 
     setActionLoading(true);
@@ -143,12 +146,17 @@ export default function AdminDashboard() {
       setAdminMessage({ type: 'success', text: `Successfully applied adjustment to ${selectedEmail || targetUserId}` });
       setAdjustmentAmount('');
       
-      await loadMasterLedger(targetUserId);
+      // FIX: Refresh the master dataset while preserving the current user view box
+      await loadMasterLedger();
     } catch (error: any) {
       setAdminMessage({ type: 'error', text: `Adjustment failed: ${error.message}` });
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const prefillDefaults = (e: React.FormEvent) => {
+    e.preventDefault();
   };
 
   const handleSaveProfileOverrides = (e: React.FormEvent) => {
@@ -163,7 +171,6 @@ export default function AdminDashboard() {
     });
   };
 
-  // IF NOT AUTHENTICATED: RENDER GATEKEEPER PASSCODE FORM
   if (!isAuthenticated) {
     return (
       <div className="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4 text-white font-sans">
@@ -205,9 +212,8 @@ export default function AdminDashboard() {
     );
   }
 
-  // IF AUTHENTICATED: RENDER SYSTEM WORKSTATION
   return (
-    <div className="fixed inset-y-0 right-0 left-0 md:static overflow-y-auto bg-slate-950 text-white p-4 sm:p-6 space-y-6 pt-16 md:pt-6 z-10">
+    <div className="w-full bg-slate-950 text-white p-4 sm:p-6 space-y-6">
       
       {/* HEADER TOP BANNER */}
       <div className="bg-gradient-to-r from-red-950/40 to-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
@@ -225,7 +231,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* MOBILE USER DROP PANEL (VISIBLE ON MOBILE ONLY) */}
+      {/* MOBILE USER DROP PANEL */}
       <div className="md:hidden w-full bg-[#0b132b] border border-slate-800 rounded-2xl p-4 shadow-xl">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
           <Users size={12} /> Live User Selection Target
