@@ -8,8 +8,12 @@ import { Search, Bell, Settings } from "lucide-react";
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   
-  // Hide internal dashboard panels on public/auth layouts
+  // 1. Identify public or administrative routes where the default user sidebar SHOULD NOT render
   const isPublicPage = pathname === "/" || pathname === "/login";
+  const isAdminPage = pathname.startsWith("/admin");
+  
+  // 2. Only activate dashboard structures if it's an authentic user dashboard subroute
+  const showUserSidebar = !isPublicPage && !isAdminPage;
 
   return (
     <html lang="en">
@@ -17,16 +21,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         
         <div className="flex min-h-screen w-full relative">
           
-          {/* Responsive Navigation Sidebar */}
-          {!isPublicPage && <Sidebar />}
+          {/* Render the user sidebar only when authorized */}
+          {showUserSidebar && <Sidebar />}
 
-          {/* MAIN CONTAINER CONTENT FRAME */}
-          <div className={`flex-1 flex flex-col min-h-screen overflow-x-hidden transition-all duration-300 w-full ${!isPublicPage ? 'pl-0 md:pl-64' : ''}`}>
+          {/* MAIN CONTAINER CONTENT FRAME
+            FIX: The padding `md:pl-64` now completely collapses to `pl-0` 
+            whenever `showUserSidebar` is false. No more random black spaces!
+          */}
+          <div className={`flex-1 flex flex-col min-h-screen overflow-x-hidden transition-all duration-300 w-full ${showUserSidebar ? 'pl-0 md:pl-64' : 'pl-0'}`}>
             
-            {!isPublicPage && (
-              /* FIX: Switched background from 'bg-white' to a dark scheme 'bg-[#0d1b2a]' 
-                with updated slate-700/40 border separators so it blends flawlessly.
-              */
+            {/* Main Header navigation element — only shows on regular user dashboard pages */}
+            {showUserSidebar && (
               <header className="h-16 bg-[#0d1b2a] border-b border-slate-700/40 flex items-center justify-between pl-16 pr-6 md:px-6 z-10 sticky top-0">
                 <div className="flex items-center gap-4 bg-slate-900/60 px-3 py-1.5 rounded-xl w-40 sm:w-72 border border-slate-800">
                   <Search size={18} className="text-slate-500" />
@@ -47,8 +52,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </header>
             )}
 
-            {/* Application Main Content Body */}
-            <main className={`p-4 sm:p-6 w-full mx-auto flex-1 bg-slate-950 min-h-screen ${!isPublicPage ? 'max-w-[1600px]' : ''}`}>
+            {/* Application Main Content Body Container */}
+            <main className="w-full mx-auto flex-1 bg-slate-950 min-h-screen">
               {children}
             </main>
           </div>
