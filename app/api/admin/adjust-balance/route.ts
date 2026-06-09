@@ -1,35 +1,51 @@
 import { NextResponse } from 'next/server';
-// 🔵 FIXED: Uses absolute pathing alias so it never breaks regardless of file depth
-import { supabaseAdmin } from '@/app/lib/supabaseAdmin';
+import { createClient } from '@supabase/supabase-js';
 
-export async function POST(request: Request) {
+// Initialize Supabase Admin Client
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // Ensure this is set in your .env
+);
+
+export async function POST(req: Request) {
   try {
-    const { targetUserId, amount, adjustmentType, recipientAccount } = await request.json();
+    const { targetUserId, amount, adjustmentType, recipientAccount } = await req.json();
 
-    if (!targetUserId || !amount || !adjustmentType) {
-      return NextResponse.json({ error: 'Missing required parameters.' }, { status: 400 });
-    }
+    // 1. Get current user profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('balance')
+      .eq('id', targetUserId)
+      .single();
 
-    // Connects with the database bypass client to inject/deduct balance metrics
-    const { data, error } = await supabaseAdmin
+    if (profileError || !profile) throw new Error('User not found');
+
+    // 2. Calculate New Balance
+    const currentBalance = Number(profile.balance);
+    const change = Number(amount);
+    const newBalance = adjustmentType === 'Online Deposit' 
+      ? currentBalance + change 
+      : currentBalance - change;
+
+    // 3. Update Profile Balance
+    await supabaseAdmin
+      .from('profiles')
+      .update({ balance: newBalance })
+      .eq('id', targetUserId);
+
+    // 4. Log Transaction
+    await supabaseAdmin
       .from('transactions')
-      .insert([
-        {
-          user_id: targetUserId,
-          amount: parseFloat(amount),
-          type: adjustmentType,
-          recipient_account: recipientAccount,
-          status: 'Settled'
-        }
-      ])
-      .select();
+      .insert({
+        user_id: targetUserId,
+        amount: change,
+        type: adjustmentType,
+        recipient_account: recipientAccount,
+        status: 'Completed'
+      });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
