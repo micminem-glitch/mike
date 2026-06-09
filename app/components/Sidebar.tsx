@@ -22,7 +22,6 @@ export default function Sidebar() {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const navItems = [
-    // Updated only this row: changed label and pointed href to /overview
     { icon: <LayoutDashboard size={20} />, label: "Dashboard", href: "/overview" },
     { icon: <ArrowUpRight size={20} />, label: "Online Deposit", href: "/deposit" },
     { icon: <ArrowDownLeft size={20} />, label: "Domestic Transfer", href: "/transfer" },
@@ -53,10 +52,10 @@ export default function Sidebar() {
         />
       )}
 
-      {/* 3. DYNAMIC SIDEBAR (DESKTOP IMMUTABLE & MOBILE OVERLAY DRIFT) */}
+      {/* 3. DYNAMIC SIDEBAR (FIXED ABSOLUTE POSITIONING OVERLAY ON MOBILE, STICKY ROW FLOW ON DESKTOP) */}
       <aside className={`
-        w-64 bg-[#0d1b2a] text-slate-300 flex flex-col h-screen sticky top-0 z-40
         fixed md:sticky top-0 bottom-0 left-0
+        w-64 bg-[#0d1b2a] text-slate-300 flex flex-col h-screen z-40
         transition-transform duration-300 ease-in-out
         ${isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
