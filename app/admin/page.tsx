@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { ChevronDown, RefreshCw, FilterX, Users, Layers, ShieldCheck } from 'lucide-react';
 
@@ -42,6 +42,12 @@ export default function AdminDashboard() {
   const [actionLoading, setActionLoading] = useState(false);
   const [adminMessage, setAdminMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  // Keep a mutable reference to the active user filter to eliminate asynchronous stale closure race conditions
+  const targetUserRef = useRef(targetUserId);
+  useEffect(() => {
+    targetUserRef.current = targetUserId;
+  }, [targetUserId]);
+
   async function loadMasterLedger() {
     setLoading(true);
     const { data: usersData } = await supabase.from('profiles').select('user_id:id, email');
@@ -54,8 +60,10 @@ export default function AdminDashboard() {
 
     if (txData) {
       setAllTransactions(txData);
-      if (targetUserId) {
-        setFilteredTransactions(txData.filter(tx => tx.user_id === targetUserId));
+      // Evaluate against the absolute current reference state rather than the component closure snapshot
+      const currentFilterId = targetUserRef.current;
+      if (currentFilterId && currentFilterId !== '') {
+        setFilteredTransactions(txData.filter(tx => tx.user_id === currentFilterId));
       } else {
         setFilteredTransactions(txData);
       }
@@ -83,6 +91,7 @@ export default function AdminDashboard() {
   };
 
   const clearUserFilter = () => {
+    targetUserRef.current = '';
     setTargetUserId('');
     setSelectedEmail('');
     setFilteredTransactions(allTransactions);
@@ -174,34 +183,126 @@ export default function AdminDashboard() {
           
           {/* Adjustment Form */}
           <div className="bg-[#0b132b] p-6 rounded-2xl border border-slate-800">
+            <h3 className="font-bold text-sm mb-4">Modify Balance Parameters</h3>
             <form onSubmit={handleBalanceAdjustment} className="space-y-4">
-              <input type="number" value={adjustmentAmount} onChange={(e) => setAdjustmentAmount(e.target.value)} 
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs" placeholder="Amount ($)" />
-              <button type="submit" disabled={actionLoading} className="w-full bg-emerald-600 py-3 rounded-xl font-bold text-xs uppercase">Execute Shift</button>
+              <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setAdjustmentType('Online Deposit')}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Online Deposit' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+                >
+                  ➕ Inject ($+)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdjustmentType('Admin Deduction')}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Admin Deduction' ? 'bg-red-600 text-white' : 'text-slate-400'}`}
+                >
+                  ➖ Minus ($-)
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Target Account Profile</label>
+                <input 
+                  type="text" 
+                  value={selectedEmail ? `${selectedEmail}` : ''} 
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 font-medium cursor-not-allowed truncate" 
+                  placeholder="Select a user account address pointer..." 
+                  disabled 
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Adjustment Value ($)</label>
+                <input type="number" value={adjustmentAmount} onChange={(e) => setAdjustmentAmount(e.target.value)} 
+                  className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs" placeholder="0.00" required />
+              </div>
+
+              <button type="submit" disabled={actionLoading || !targetUserId} className={`w-full py-3 rounded-xl font-bold text-xs uppercase text-white transition-all disabled:bg-slate-800 disabled:text-slate-600 ${adjustmentType === 'Online Deposit' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                {actionLoading ? 'Executing Change Override...' : 'Execute Balance Shift'}
+              </button>
+            </form>
+          </div>
+
+          {/* Node Properties Form */}
+          <div className="bg-[#0b132b] p-6 rounded-2xl border border-slate-800">
+            <h3 className="font-bold text-sm mb-4">Edit Node Properties</h3>
+            <form onSubmit={handleSaveProfileOverrides} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Account Custom Limit</label>
+                <input type="text" value={customLimit} onChange={(e) => setCustomLimit(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white font-mono" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Assigned Loan Balance</label>
+                <input type="text" value={customLoan} onChange={(e) => setCustomLoan(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white font-mono" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Node Status Level</label>
+                <select value={customStatus} onChange={(e) => setCustomStatus(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white outline-none cursor-pointer">
+                  <option value="Active">🟢 Active / Enforced Tunnel</option>
+                  <option value="Suspended">🟡 Verification Hold</option>
+                  <option value="Terminated">🔴 Terminated / Locked Node</option>
+                </select>
+              </div>
+              <button type="submit" disabled={!targetUserId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all">
+                Save Account Updates
+              </button>
             </form>
           </div>
         </div>
 
         {/* Ledger */}
-        <div className="lg:col-span-8 bg-[#0b132b] p-6 rounded-2xl border border-slate-800">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold">{selectedEmail ? `Ledger: ${selectedEmail}` : "Global Ledger Stream"}</h3>
-            {targetUserId && <button onClick={clearUserFilter} className="bg-slate-800 px-3 py-1 rounded-lg text-xs">Reset</button>}
+        <div className="lg:col-span-8 bg-[#0b132b] p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
+                <Layers size={14} className="text-blue-400" />
+                {selectedEmail ? `Ledger Feed Stream: ${selectedEmail}` : "Global Ledger Stream Trace"}
+              </h3>
+              {targetUserId && <button onClick={clearUserFilter} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 transition-all">Reset Feed (Show All)</button>}
+            </div>
+
+            {adminMessage && (
+              <div className={`p-3 rounded-xl text-xs mb-4 ${adminMessage.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                {adminMessage.text}
+              </div>
+            )}
+
+            {loading ? (
+              <p className="text-sm text-slate-500 animate-pulse flex items-center gap-2"><RefreshCw size={14} className="animate-spin" /> Running array query sync...</p>
+            ) : filteredTransactions.length === 0 ? (
+              <p className="text-xs text-slate-500 py-12 text-center bg-black/20 rounded-xl border border-dashed border-slate-800">No transaction logs matching this account signature.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-[#111a36] text-slate-400 font-semibold">
+                    <tr>
+                      <th className="p-3">User Email Identity</th>
+                      <th className="p-3">Type Classification</th>
+                      <th className="p-3">Delta Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {filteredTransactions.map((tx) => {
+                      const isDeposit = tx.type === 'Online Deposit';
+                      return (
+                        <tr key={tx.id} className="hover:bg-slate-900/40 transition-colors">
+                          <td className="p-3 font-medium text-slate-300">{getEmailFromId(tx.user_id)}</td>
+                          <td className="p-3 font-medium">
+                            <span className={isDeposit ? 'text-emerald-400' : 'text-slate-400'}>{tx.type}</span>
+                          </td>
+                          <td className={`p-3 font-bold ${isDeposit ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {isDeposit ? '+' : '-'}${Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <table className="w-full text-left text-xs">
-            <thead><tr className="text-slate-400"><th className="p-3">User</th><th className="p-3">Type</th><th className="p-3">Delta</th></tr></thead>
-            <tbody>
-              {filteredTransactions.map((tx) => (
-                <tr key={tx.id} className="border-t border-slate-800">
-                  <td className="p-3">{getEmailFromId(tx.user_id)}</td>
-                  <td className="p-3">{tx.type}</td>
-                  <td className={`p-3 font-bold ${tx.type === 'Online Deposit' ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {tx.type === 'Online Deposit' ? '+' : '-'}${Number(tx.amount).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
