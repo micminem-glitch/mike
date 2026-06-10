@@ -1,33 +1,37 @@
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/app/lib/supabaseAdmin'; // Ensure this points to your admin client
 
-export async function POST(request: Request) {
-  try {
-    const { targetUserId, amount, adjustmentType, recipientAccount } = await request.json();
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // MUST use service role key
+);
 
-    if (!targetUserId || !amount || !adjustmentType) {
-      return NextResponse.json({ error: 'Missing parameters.' }, { status: 400 });
-    }
+export async function POST(req: Request) {
+  const { targetUserId, amount, adjustmentType, recipientAccount } = await req.json();
 
-    const { data, error } = await supabaseAdmin
-      .from('transactions')
-      .insert([
-        {
-          user_id: targetUserId,
-          amount: parseFloat(amount),
-          type: adjustmentType,
-          recipient_account: recipientAccount,
-          status: 'Settled'
-        }
-      ]);
+  // 1. Double check the user exists first
+  const { data: user, error: userError } = await supabaseAdmin
+    .from('profiles')
+    .select('id')
+    .eq('id', targetUserId)
+    .single();
 
-    if (error) {
-      console.error("Supabase Admin Error:", error);
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  if (userError || !user) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
+
+  // 2. Perform the insert
+  const { error: txError } = await supabaseAdmin
+    .from('transactions')
+    .insert([{
+      user_id: targetUserId,
+      type: adjustmentType,
+      amount: parseFloat(amount),
+      recipient_account: recipientAccount,
+      status: 'completed'
+    }]);
+
+  if (txError) return NextResponse.json({ error: txError.message }, { status: 500 });
+
+  return NextResponse.json({ success: true });
 }
