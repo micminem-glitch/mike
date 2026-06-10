@@ -46,22 +46,19 @@ export default function AdminDashboard() {
     targetUserRef.current = targetUserId;
   }, [targetUserId]);
 
- async function loadMasterLedger() {
+  async function loadMasterLedger() {
     setLoading(true);
+    setAdminMessage(null); 
     try {
       const response = await fetch('/api/admin/ledger');
-      if (!response.ok) throw new Error('Secure tracking node rejected connection request.');
-      
       const data = await response.json();
 
+      if (!response.ok) {
+        throw new Error(data.error || 'Secure tracking node rejected connection request.');
+      }
+
       if (data.users) {
-        // 🔥 THE FIX: Bulletproof mapping. This forces the 'id' from the database 
-        // to become the 'user_id' your frontend interface relies on.
-        const formattedUsers = data.users.map((u: any) => ({ 
-          user_id: u.user_id || u.id, 
-          email: u.email 
-        }));
-        setUserList(formattedUsers);
+        setUserList(data.users as UserMap[]);
       }
 
       if (data.transactions) {
@@ -69,7 +66,6 @@ export default function AdminDashboard() {
         setAllTransactions(txData);
         
         const currentFilterId = targetUserRef.current;
-        // Make sure we are filtering by a valid, existing ID string
         if (currentFilterId && currentFilterId !== '') {
           setFilteredTransactions(txData.filter(tx => tx.user_id === currentFilterId));
         } else {
@@ -77,12 +73,32 @@ export default function AdminDashboard() {
         }
       }
     } catch (error: any) {
-      console.error(error);
+      console.error("Failed to load master ledger:", error);
       setAdminMessage({ type: 'error', text: `Synchronization loss: ${error.message}` });
     } finally {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (isAuthenticated) loadMasterLedger();
+  }, [isAuthenticated]);
+
+  const handleVerifyPasscode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passcodeInput === "HexafoxAdmin2026!") {
+      setIsAuthenticated(true);
+    } else {
+      setGatekeeperError('Invalid Administrative Authorization Credentials.');
+    }
+  };
+
+  const selectTargetUser = (uid: string, emailStr: string) => {
+    if (!uid) return;
+    setTargetUserId(uid);
+    setSelectedEmail(emailStr);
+    setFilteredTransactions(allTransactions.filter(tx => tx.user_id === uid));
+  };
 
   const clearUserFilter = () => {
     targetUserRef.current = '';
@@ -168,7 +184,7 @@ export default function AdminDashboard() {
             <div className="space-y-2 max-h-[220px] overflow-y-auto">
               {userList.map((usr) => (
                 <button key={usr.user_id} onClick={() => selectTargetUser(usr.user_id, usr.email)} 
-                  className={`w-full text-left p-3 rounded-xl border ${targetUserId === usr.user_id ? 'bg-blue-600/20 border-blue-500' : 'bg-black/30 border-slate-800'}`}>
+                  className={`w-full text-left p-3 rounded-xl border transition-all ${targetUserId === usr.user_id ? 'bg-blue-600/20 border-blue-500' : 'bg-black/30 border-slate-800'}`}>
                   {usr.email}
                 </button>
               ))}
