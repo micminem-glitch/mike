@@ -46,7 +46,7 @@ export default function AdminDashboard() {
     targetUserRef.current = targetUserId;
   }, [targetUserId]);
 
-  async function loadMasterLedger() {
+ async function loadMasterLedger() {
     setLoading(true);
     try {
       const response = await fetch('/api/admin/ledger');
@@ -55,7 +55,13 @@ export default function AdminDashboard() {
       const data = await response.json();
 
       if (data.users) {
-        setUserList(data.users as UserMap[]);
+        // 🔥 THE FIX: Bulletproof mapping. This forces the 'id' from the database 
+        // to become the 'user_id' your frontend interface relies on.
+        const formattedUsers = data.users.map((u: any) => ({ 
+          user_id: u.user_id || u.id, 
+          email: u.email 
+        }));
+        setUserList(formattedUsers);
       }
 
       if (data.transactions) {
@@ -63,6 +69,7 @@ export default function AdminDashboard() {
         setAllTransactions(txData);
         
         const currentFilterId = targetUserRef.current;
+        // Make sure we are filtering by a valid, existing ID string
         if (currentFilterId && currentFilterId !== '') {
           setFilteredTransactions(txData.filter(tx => tx.user_id === currentFilterId));
         } else {
@@ -76,25 +83,6 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    if (isAuthenticated) loadMasterLedger();
-  }, [isAuthenticated]);
-
-  const handleVerifyPasscode = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passcodeInput === "HexafoxAdmin2026!") {
-      setIsAuthenticated(true);
-    } else {
-      setGatekeeperError('Invalid Administrative Authorization Credentials.');
-    }
-  };
-
-  const selectTargetUser = (uid: string, emailStr: string) => {
-    setTargetUserId(uid);
-    setSelectedEmail(emailStr);
-    setFilteredTransactions(allTransactions.filter(tx => tx.user_id === uid));
-  };
 
   const clearUserFilter = () => {
     targetUserRef.current = '';
