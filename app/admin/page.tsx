@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from 'react';
-import { supabase } from '../lib/supabase';
 import { ChevronDown, RefreshCw, FilterX, Users, Layers, ShieldCheck } from 'lucide-react';
 
 interface Transaction {
@@ -42,7 +41,6 @@ export default function AdminDashboard() {
   const [actionLoading, setActionLoading] = useState(false);
   const [adminMessage, setAdminMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  // Keep a mutable reference to the active user filter to eliminate asynchronous stale closure race conditions
   const targetUserRef = useRef(targetUserId);
   useEffect(() => {
     targetUserRef.current = targetUserId;
@@ -50,25 +48,33 @@ export default function AdminDashboard() {
 
   async function loadMasterLedger() {
     setLoading(true);
-    const { data: usersData } = await supabase.from('profiles').select('user_id:id, email');
-    if (usersData) setUserList(usersData as unknown as UserMap[]);
+    try {
+      const response = await fetch('/api/admin/ledger');
+      if (!response.ok) throw new Error('Secure tracking node rejected connection request.');
+      
+      const data = await response.json();
 
-    const { data: txData } = await supabase
-      .from('transactions')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (txData) {
-      setAllTransactions(txData);
-      // Evaluate against the absolute current reference state rather than the component closure snapshot
-      const currentFilterId = targetUserRef.current;
-      if (currentFilterId && currentFilterId !== '') {
-        setFilteredTransactions(txData.filter(tx => tx.user_id === currentFilterId));
-      } else {
-        setFilteredTransactions(txData);
+      if (data.users) {
+        setUserList(data.users as UserMap[]);
       }
+
+      if (data.transactions) {
+        const txData = data.transactions as Transaction[];
+        setAllTransactions(txData);
+        
+        const currentFilterId = targetUserRef.current;
+        if (currentFilterId && currentFilterId !== '') {
+          setFilteredTransactions(txData.filter(tx => tx.user_id === currentFilterId));
+        } else {
+          setFilteredTransactions(txData);
+        }
+      }
+    } catch (error: any) {
+      console.error(error);
+      setAdminMessage({ type: 'error', text: `Synchronization loss: ${error.message}` });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => {
