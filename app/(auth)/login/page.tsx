@@ -37,7 +37,7 @@ export default function LoginTerminalPage() {
       
       // 2. Route straight into the user gateway / dashboard
       setTimeout(() => {
-        router.push('/dashboard'); // Change this path if your user page lives elsewhere (e.g., '/')
+        router.push('/overview'); // Change this path if your user page lives elsewhere (e.g., '/')
       }, 1500);
 
     } catch (error: any) {
