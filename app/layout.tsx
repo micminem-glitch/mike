@@ -5,29 +5,27 @@ import Sidebar from "./components/Sidebar";
 import { usePathname } from "next/navigation";
 import { Search, Bell, Settings } from "lucide-react";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }) {
   const pathname = usePathname();
   
-  // Define exactly which pages are public and shouldn't have menus
-  const isPublicPage = pathname === "/" || pathname === "/login";
+  // FIXED: Added "/register" to the exclusion list so it renders completely full-screen
+  const isPublicPage = pathname === "/" || pathname === "/login" || pathname === "/register";
   const showDashboardLayout = !isPublicPage;
 
   return (
     <html lang="en">
       <body className="bg-slate-950 font-sans antialiased text-slate-200 min-h-screen">
         
-        {/* The outer flex container centers and scales your panels naturally */}
+        {/* Outer container centers and scales panels naturally */}
         <div className="flex min-h-screen w-full relative bg-slate-950">
           
-          {/* 1. Sidebar renders here side-by-side with your main views */}
+          {/* 1. Sidebar renders side-by-side with main views if not a public page */}
           {showDashboardLayout && <Sidebar />}
 
-          {/* 2. Main content block fills the rest of the available screen space 
-              FIX: Removed 'md:pl-64' completely. No more double padding or black gaps!
-          */}
+          {/* 2. Main content block fills the rest of the available screen space */}
           <div className="flex-1 flex flex-col min-h-screen min-w-0 w-full">
             
-            {/* 3. Top Navbar — Now fully restored and visible on both user and admin paths */}
+            {/* 3. Top Navbar — Visible on dashboard paths, hidden on login/register */}
             {showDashboardLayout && (
               <header className="h-16 bg-[#0d1b2a] border-b border-slate-700/40 flex items-center justify-between px-6 z-10 sticky top-0">
                 <div className="flex items-center gap-4 bg-slate-900/60 px-3 py-1.5 rounded-xl w-40 sm:w-72 border border-slate-800">
