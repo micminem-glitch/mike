@@ -11,7 +11,6 @@ import {
   Briefcase, 
   History, 
   Download, 
-  User,
   Menu,
   X 
 } from 'lucide-react';
@@ -29,7 +28,6 @@ export default function Sidebar() {
     { icon: <Briefcase size={20} />, label: "Loan & Mortgages", href: "/loans" },
     { icon: <History size={20} />, label: "Transaction Logs", href: "/logs" },
     { icon: <Download size={20} />, label: "Withdrawal", href: "/withdrawal" },
-    { icon: <User size={20} />, label: "Account Manager", href: "/account" },
   ];
 
   return (
