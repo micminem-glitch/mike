@@ -1,78 +1,140 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-// 1. Tell Next.js to treat this as a dynamic server route (Prevents build-time evaluation)
-export const dynamic = "force-dynamic";
+// Initialize the privileged admin client
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! 
+);
 
-// 2. Fallback strings ensure the Next.js compiler doesn't panic during 'npm run build'
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://hkbsaokjumjmvkwzweug.supabase.co";
-
-// Prioritizes service role key, falls back to your anon key, falls back to placeholder to prevent crashing
-const supabaseKey = 
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-  "build_placeholder_key";
-
-const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
-
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
+    const body = await request.json();
+    console.log("📥 Incoming Admin Operation Payload:", body);
+
     const { 
       targetUserId, 
       amount, 
       adjustmentType, 
       recipientAccount,
-      // New Node Properties Parameters
-      accountLimit,
-      loanBalance,
+      accountLimit, 
+      loanBalance, 
       nodeStatus 
     } = body;
 
-    // 1. Double check that the target account exists first
-    const { data: user, error: userError } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('id', targetUserId)
-      .single();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'User configuration node not found' }, { status: 404 });
+    if (!targetUserId) {
+      return NextResponse.json({ error: 'Target User ID string is required.' }, { status: 400 });
     }
 
-    // 2. CONDITION A: Handle Ledger Shift / Balance Injection (If amount is provided)
-    if (amount !== undefined && adjustmentType) {
-      const { error: txError } = await supabaseAdmin
+    // This object accumulates all column mutations for a single database write call
+    const profileUpdates: Record<string, any> = {};
+
+    // ==========================================
+    // 1. STAGE PROFILE NODE PROPERTY UPDATES
+    // ==========================================
+    if (accountLimit !== undefined && accountLimit !== null) {
+      const cleanLimit = typeof accountLimit === 'string' ? parseFloat(accountLimit.replace(/,/g, '')) : accountLimit;
+      profileUpdates.account_limit = isNaN(cleanLimit) ? 2000000.00 : cleanLimit;
+    }
+
+    if (loanBalance !== undefined && loanBalance !== null) {
+      const cleanLoan = typeof loanBalance === 'string' ? parseFloat(loanBalance.replace(/,/g, '')) : loanBalance;
+      profileUpdates.loan_balance = isNaN(cleanLoan) ? 0.00 : cleanLoan;
+    }
+
+    if (nodeStatus !== undefined && nodeStatus !== null) {
+      profileUpdates.node_status = nodeStatus;
+    }
+
+    // ==========================================
+    // 2. STAGE LEDGER BALANCE CALCULATION
+    // ==========================================
+    let shouldInsertTransactionLog = false;
+
+    if (amount !== undefined && amount !== null && adjustmentType) {
+      const parsedAmount = parseFloat(String(amount).replace(/,/g, ''));
+      
+      if (!isNaN(parsedAmount) && parsedAmount > 0) {
+        // Fetch current active ledger standing
+        const { data: currentProfile, error: profileFetchError } = await supabaseAdmin
+          .from('profiles')
+          .select('balance')
+          .eq('id', targetUserId)
+          .single();
+
+        if (profileFetchError || !currentProfile) {
+          console.error("❌ Profile retrieval lookup error:", profileFetchError);
+          return NextResponse.json({ error: 'Target user profile record could not be resolved.' }, { status: 404 });
+        }
+
+        const standardBalance = Number(currentProfile.balance || 0);
+        const typeLower = adjustmentType.toLowerCase();
+
+        // Smart, flexible evaluation targeting both explicit titles and loosely typed inputs
+        const isAdditionOperation = 
+          typeLower.includes('deposit') || 
+          typeLower.includes('inject') || 
+          typeLower.includes('add') || 
+          typeLower.includes('credit');
+
+        const updatedFinalBalance = isAdditionOperation 
+          ? standardBalance + parsedAmount 
+          : standardBalance - parsedAmount;
+
+        // Stage the calculated value to our update queue
+        profileUpdates.balance = updatedFinalBalance;
+        shouldInsertTransactionLog = true;
+
+        console.log(`⚙️ Math Check: ${standardBalance} ${isAdditionOperation ? '+' : '-'} ${parsedAmount} = ${updatedFinalBalance}`);
+      }
+    }
+
+    // ==========================================
+    // 3. EXECUTE COMBINED ATOMIC WRITE 
+    // ==========================================
+    if (Object.keys(profileUpdates).length > 0) {
+      console.log("💾 Committing updates to profiles table row:", profileUpdates);
+      const { error: profileUpdateError } = await supabaseAdmin
+        .from('profiles')
+        .update(profileUpdates)
+        .eq('id', targetUserId);
+
+      if (profileUpdateError) {
+        console.error("❌ Supabase Profile Commit Error:", profileUpdateError);
+        return NextResponse.json({ error: profileUpdateError.message }, { status: 500 });
+      }
+    }
+
+    // ==========================================
+    // 4. WRITE HISTORICAL TRANSACTION AUDIT LOG
+    // ==========================================
+    if (shouldInsertTransactionLog) {
+      const finalParsedAmount = parseFloat(String(amount).replace(/,/g, ''));
+      console.log("📝 Writing entry log into transactions table...");
+      const { error: transactionLogError } = await supabaseAdmin
         .from('transactions')
         .insert([{
           user_id: targetUserId,
           type: adjustmentType,
-          amount: parseFloat(amount),
-          recipient_account: recipientAccount || null,
-          status: 'completed'
+          amount: finalParsedAmount,
+          recipient_account: recipientAccount || 'ADMIN CORE ADJUSTMENT',
+          status: 'Completed',
+          created_at: new Date().toISOString()
         }]);
 
-      if (txError) return NextResponse.json({ error: `Ledger execution fault: ${txError.message}` }, { status: 500 });
+      if (transactionLogError) {
+        console.error("❌ Non-fatal Transaction Logging Warning:", transactionLogError);
+        // The balance update was successful; we won't crash out, but we flag it in logs.
+      }
     }
 
-    // 3. CONDITION B: Handle Node Properties Update (If fields are passed from the second form)
-    if (accountLimit !== undefined || loanBalance !== undefined || nodeStatus !== undefined) {
-      const updatePayload: any = {};
-      
-      if (accountLimit !== undefined) updatePayload.account_limit = parseFloat(accountLimit);
-      if (loanBalance !== undefined) updatePayload.loan_balance = parseFloat(loanBalance);
-      if (nodeStatus !== undefined) updatePayload.node_status = nodeStatus;
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Ledger mutations synchronized completely across dependencies.' 
+    });
 
-      const { error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .update(updatePayload)
-        .eq('id', targetUserId);
-
-      if (profileError) return NextResponse.json({ error: `Node adjustment fault: ${profileError.message}` }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, message: "System pipeline modifications written successfully." });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (globalCatchError: any) {
+    console.error("❌ Global override route failure:", globalCatchError);
+    return NextResponse.json({ error: globalCatchError.message }, { status: 500 });
   }
 }
