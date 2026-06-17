@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronDown, RefreshCw, FilterX, Users, Layers, ShieldCheck } from 'lucide-react';
+import { ChevronDown, RefreshCw, FilterX, Users, Layers, ShieldCheck, KeyRound } from 'lucide-react';
 
 interface Transaction {
   id: string;
@@ -10,12 +10,17 @@ interface Transaction {
   recipient_account: string;
   amount: number;
   status: string;
+  generated_otp?: string; 
   created_at: string;
 }
 
 interface UserMap {
   user_id: string;
   email: string;
+  // Extended configuration parameters fetched from master ledger query
+  account_limit?: number;
+  loan_balance?: number;
+  node_status?: string;
 }
 
 export default function AdminDashboard() {
@@ -34,9 +39,10 @@ export default function AdminDashboard() {
   const [adjustmentAmount, setAdjustmentAmount] = useState('');
   const [adjustmentType, setAdjustmentType] = useState<'Online Deposit' | 'Admin Deduction'>('Online Deposit');
   
-  const [customLimit, setCustomLimit] = useState('2,000,000.00');
+  // Dynamic State Monitors matching user configurations
+  const [customLimit, setCustomLimit] = useState('2000000.00');
   const [customLoan, setCustomLoan] = useState('0.00');
-  const [customStatus, setCustomStatus] = useState('Active');
+  const [customStatus, setCustomStatus] = useState('Active / Enforced Tunnel');
   
   const [actionLoading, setActionLoading] = useState(false);
   const [adminMessage, setAdminMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -45,6 +51,9 @@ export default function AdminDashboard() {
   useEffect(() => {
     targetUserRef.current = targetUserId;
   }, [targetUserId]);
+
+  // Derive transactions that are currently frozen on standby awaiting verification
+  const otpStandbyQueue = allTransactions.filter(tx => tx.status === 'Waiting for OTP');
 
   async function loadMasterLedger() {
     setLoading(true);
@@ -59,6 +68,17 @@ export default function AdminDashboard() {
 
       if (data.users) {
         setUserList(data.users as UserMap[]);
+        
+        // Refresh currently active selected user metadata context if already selected
+        const currentId = targetUserRef.current;
+        if (currentId) {
+          const updatedUser = (data.users as UserMap[]).find(u => u.user_id === currentId);
+          if (updatedUser) {
+            setCustomLimit(updatedUser.account_limit !== undefined && updatedUser.account_limit !== null ? updatedUser.account_limit.toString() : '2000000.00');
+            setCustomLoan(updatedUser.loan_balance !== undefined && updatedUser.loan_balance !== null ? updatedUser.loan_balance.toString() : '0.00');
+            setCustomStatus(updatedUser.node_status || 'Active / Enforced Tunnel');
+          }
+        }
       }
 
       if (data.transactions) {
@@ -93,11 +113,16 @@ export default function AdminDashboard() {
     }
   };
 
-  const selectTargetUser = (uid: string, emailStr: string) => {
-    if (!uid) return;
-    setTargetUserId(uid);
-    setSelectedEmail(emailStr);
-    setFilteredTransactions(allTransactions.filter(tx => tx.user_id === uid));
+  const selectTargetUser = (usr: UserMap) => {
+    if (!usr.user_id) return;
+    setTargetUserId(usr.user_id);
+    setSelectedEmail(usr.email);
+    setFilteredTransactions(allTransactions.filter(tx => tx.user_id === usr.user_id));
+    
+    // Auto populate state input controls using real database configurations
+    setCustomLimit(usr.account_limit !== undefined && usr.account_limit !== null ? usr.account_limit.toString() : '2000000.00');
+    setCustomLoan(usr.loan_balance !== undefined && usr.loan_balance !== null ? usr.loan_balance.toString() : '0.00');
+    setCustomStatus(usr.node_status || 'Active / Enforced Tunnel');
   };
 
   const clearUserFilter = () => {
@@ -105,6 +130,9 @@ export default function AdminDashboard() {
     setTargetUserId('');
     setSelectedEmail('');
     setFilteredTransactions(allTransactions);
+    setCustomLimit('2000000.00');
+    setCustomLoan('0.00');
+    setCustomStatus('Active / Enforced Tunnel');
   };
 
   const getEmailFromId = (uid: string) => {
@@ -144,13 +172,38 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleSaveProfileOverrides = (e: React.FormEvent) => {
+  const handleSaveProfileOverrides = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetUserId) {
       setAdminMessage({ type: 'error', text: 'Please select a user account first.' });
       return;
     }
-    setAdminMessage({ type: 'success', text: `Saved properties for: ${selectedEmail}` });
+
+    setActionLoading(true);
+    setAdminMessage(null);
+
+    try {
+      const response = await fetch('/api/admin/adjust-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId,
+          accountLimit: customLimit,
+          loanBalance: customLoan,
+          nodeStatus: customStatus
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to write configurations to database.');
+
+      setAdminMessage({ type: 'success', text: `Successfully rewritten account limit parameters for: ${selectedEmail}` });
+      await loadMasterLedger();
+    } catch (error: any) {
+      setAdminMessage({ type: 'error', text: `Override save fault: ${error.message}` });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   if (!isAuthenticated) {
@@ -183,7 +236,7 @@ export default function AdminDashboard() {
             <h3 className="font-bold text-sm mb-4">Registered Accounts</h3>
             <div className="space-y-2 max-h-[220px] overflow-y-auto">
               {userList.map((usr) => (
-                <button key={usr.user_id} onClick={() => selectTargetUser(usr.user_id, usr.email)} 
+                <button key={usr.user_id} onClick={() => selectTargetUser(usr)} 
                   className={`w-full text-left p-3 rounded-xl border transition-all ${targetUserId === usr.user_id ? 'bg-blue-600/20 border-blue-500' : 'bg-black/30 border-slate-800'}`}>
                   {usr.email}
                 </button>
@@ -201,14 +254,14 @@ export default function AdminDashboard() {
                   onClick={() => setAdjustmentType('Online Deposit')}
                   className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Online Deposit' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
                 >
-                  ➕ Inject ($+)
+                  {`➕ Inject ($+)`}
                 </button>
                 <button
                   type="button"
                   onClick={() => setAdjustmentType('Admin Deduction')}
                   className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustmentType === 'Admin Deduction' ? 'bg-red-600 text-white' : 'text-slate-400'}`}
                 >
-                  ➖ Minus ($-)
+                  {`➖ Minus ($-)`}
                 </button>
               </div>
 
@@ -241,30 +294,85 @@ export default function AdminDashboard() {
             <form onSubmit={handleSaveProfileOverrides} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Account Custom Limit</label>
-                <input type="text" value={customLimit} onChange={(e) => setCustomLimit(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white font-mono" />
+                <input type="text" value={customLimit} onChange={(e) => setCustomLimit(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white font-mono" placeholder="2000000.00" />
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Assigned Loan Balance</label>
-                <input type="text" value={customLoan} onChange={(e) => setCustomLoan(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white font-mono" />
+                <input type="text" value={customLoan} onChange={(e) => setCustomLoan(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white font-mono" placeholder="0.00" />
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Node Status Level</label>
                 <select value={customStatus} onChange={(e) => setCustomStatus(e.target.value)} className="w-full bg-[#111a36] border border-slate-700/50 rounded-xl p-3 text-xs text-white outline-none cursor-pointer">
-                  <option value="Active">🟢 Active / Enforced Tunnel</option>
-                  <option value="Suspended">🟡 Verification Hold</option>
-                  <option value="Terminated">🔴 Terminated / Locked Node</option>
+                  <option value="Active / Enforced Tunnel">🟢 Active / Enforced Tunnel</option>
+                  <option value="Verification Hold">🟡 Verification Hold</option>
+                  <option value="Terminated / Locked Node">🔴 Terminated / Locked Node</option>
                 </select>
               </div>
-              <button type="submit" disabled={!targetUserId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all">
-                Save Account Updates
+              <button type="submit" disabled={actionLoading || !targetUserId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all">
+                {actionLoading ? 'Saving Metrics...' : 'Save Account Updates'}
               </button>
             </form>
           </div>
         </div>
 
-        {/* Ledger */}
-        <div className="lg:col-span-8 bg-[#0b132b] p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-          <div>
+        {/* Ledger & OTP Panels */}
+        <div className="lg:col-span-8 space-y-6">
+          
+          {/* Dedicated Live OTP Clearance Queue */}
+          <div className="bg-[#0b132b] p-6 rounded-2xl border border-slate-800">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-sm text-amber-400 flex items-center gap-1.5">
+                <KeyRound size={16} /> Live OTP Authorization Monitor
+              </h3>
+              <button 
+                onClick={loadMasterLedger}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors text-slate-400 hover:text-white"
+                title="Refresh Live Data"
+              >
+                <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
+            {otpStandbyQueue.length === 0 ? (
+              <p className="text-[11px] text-slate-500 py-6 text-center bg-black/20 rounded-xl border border-dashed border-slate-800">
+                No users are currently awaiting an OTP verification code.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-[#1a1f36] text-amber-400/90 font-semibold border-b border-slate-800">
+                    <tr>
+                      <th className="p-2.5">User Email</th>
+                      <th className="p-2.5">User ID String</th>
+                      <th className="p-2.5">Amount</th>
+                      <th className="p-2.5 text-center">Active OTP Code</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 bg-black/10">
+                    {otpStandbyQueue.map((tx) => (
+                      <tr key={tx.id} className="hover:bg-slate-900/60 transition-colors">
+                        <td className="p-2.5 font-medium text-slate-200">{getEmailFromId(tx.user_id)}</td>
+                        <td className="p-2.5 font-mono text-[10px] text-slate-500 max-w-[120px] truncate" title={tx.user_id}>
+                          {tx.user_id}
+                        </td>
+                        <td className="p-2.5 font-bold text-slate-200">
+                          ${Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-md font-mono font-black tracking-widest text-xs select-all">
+                            {tx.generated_otp || '------'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Master Transaction Ledger */}
+          <div className="bg-[#0b132b] p-6 rounded-2xl border border-slate-800">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
                 <Layers size={14} className="text-blue-400" />
@@ -313,6 +421,7 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+
         </div>
       </div>
     </div>
