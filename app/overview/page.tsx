@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 export default function Dashboard() {
   const [balance, setBalance] = useState(0.00);
   const [accountNumber, setAccountNumber] = useState('Loading...');
+  const [fullName, setFullName] = useState('Loading...');
   const [recentTxAmount, setRecentTxAmount] = useState(0.00);
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState('Loading...');
@@ -20,12 +21,31 @@ export default function Dashboard() {
   // Retained static metadata tracking parameters
   const accountMetrics = {
     pending: "0.00",
-    lastLoginIp: "192.168.1.1", // Generic fallback IP address configuration
+    lastLoginIp: "192.168.1.1", 
     lastLoginDate: "2026-06-08 08:25:11"
   };
 
   const chartData = [60, 40, 70, 50, 90, 30, 80];
   const router = useRouter();
+
+  // Helper function to resolve dynamic greeting based on client system time
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  // Helper function to extract initials from full name dynamically
+  const getInitials = (nameString: string) => {
+    if (!nameString || nameString === 'Loading...') return 'HX';
+    return nameString
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   useEffect(() => {
     let profileChannel: any;
@@ -40,10 +60,10 @@ export default function Dashboard() {
 
       setUserEmail(user.email || 'Secure Vault Account');
 
-      // Helper function to map data objects safely into state
       const hydrateProfileStates = (profileData: any) => {
         if (profileData.balance !== undefined) setBalance(Number(profileData.balance || 0));
         if (profileData.account_number) setAccountNumber(profileData.account_number || 'CH-0049281-X');
+        if (profileData.full_name) setFullName(profileData.full_name || 'Valued Client');
         
         if (profileData.account_limit !== undefined && profileData.account_limit !== null) {
           setAccountLimit(Number(profileData.account_limit));
@@ -57,10 +77,9 @@ export default function Dashboard() {
       };
 
       try {
-        // 1. Initial Data Load
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('balance, account_number, account_limit, loan_balance, node_status')
+          .select('balance, account_number, account_limit, loan_balance, node_status, full_name')
           .eq('id', user.id)
           .single();
 
@@ -70,7 +89,6 @@ export default function Dashboard() {
           hydrateProfileStates(profile);
         }
 
-        // 2. REALTIME LISTENERS: Instantly catch mutations pushed from the admin pipeline
         profileChannel = supabase
           .channel(`live-profile-${user.id}`)
           .on(
@@ -88,7 +106,6 @@ export default function Dashboard() {
           )
           .subscribe();
 
-        // 3. Fetch the most recent transaction log entry
         const { data: tx } = await supabase
           .from('transactions')
           .select('amount')
@@ -108,7 +125,6 @@ export default function Dashboard() {
 
     loadDashboardDetails();
 
-    // Cleanup subscription pipeline hook when user changes pages/unmounts
     return () => {
       if (profileChannel) {
         supabase.removeChannel(profileChannel);
@@ -132,27 +148,49 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* TOP BAR / WELCOME ROW */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#0b132b] p-4 rounded-2xl border border-slate-900 gap-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#0b132b] p-5 rounded-2xl border border-slate-900 gap-4 shadow-xl">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center font-bold shadow-lg">
-              VX
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center font-bold shadow-lg text-sm tracking-wider">
+              {loading ? "..." : getInitials(fullName)}
             </div>
-            <div>
-              <h2 className="font-bold text-lg leading-tight truncate max-w-[280px] sm:max-w-md" title={userEmail}>
-                {userEmail}
+            <div className="space-y-1">
+              {/* Added Time-based Dynamic Greeting block */}
+              <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest leading-none">
+                {getGreeting()}
+              </p>
+              
+              <h2 className="font-bold text-xl leading-tight text-slate-50">
+                {loading ? "Loading..." : fullName}
               </h2>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className={`w-2 h-2 rounded-full animate-pulse ${nodeStatus.toLowerCase().includes('active') ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                <span className="text-xs text-slate-400 font-medium tracking-wide">Secure Session Link Active</span>
+              
+              {/* Account copy block */}
+              <div className="flex items-center gap-2 bg-slate-950/60 border border-slate-800/80 rounded-lg px-2.5 py-1 w-fit group/top-acc">
+                <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Acc:</span>
+                <span className="text-xs font-mono font-medium text-slate-200 tracking-wider">
+                  {loading ? "Fetching ID..." : accountNumber}
+                </span>
+                <button
+                  onClick={handleCopyAccount}
+                  className="ml-1 text-[10px] font-bold text-blue-400 hover:text-emerald-400 border border-slate-800 bg-slate-900/80 px-2 py-0.5 rounded transition-all duration-150"
+                >
+                  {copied ? "✓ Copied" : "Copy"}
+                </button>
               </div>
             </div>
           </div>
-          <button 
-            onClick={handleLogout}
-            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 hover:border-red-500/30 text-xs font-semibold tracking-wide transition-all duration-200"
-          >
-            Sign Out Securely
-          </button>
+          
+          <div className="flex flex-col items-end gap-1.5 w-full sm:w-auto">
+            <button 
+              onClick={handleLogout}
+              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 hover:border-red-500/30 text-xs font-semibold tracking-wide transition-all duration-200"
+            >
+              Sign Out Securely
+            </button>
+            <div className="flex items-center gap-1.5 self-start sm:self-auto mr-1">
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${nodeStatus.toLowerCase().includes('active') ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+              <span className="text-[10px] text-slate-500 font-medium tracking-wide">Secure Link Enforced</span>
+            </div>
+          </div>
         </div>
 
         {/* MAIN CORE DASHBOARD GRID */}
