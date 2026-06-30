@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/navigation';
+// Added icons for the integrated live-chat subsystem
+import { MessageSquare, X, Send } from 'lucide-react';
 
 export default function Dashboard() {
   const [balance, setBalance] = useState(0.00);
@@ -17,6 +19,14 @@ export default function Dashboard() {
   const [accountLimit, setAccountLimit] = useState(2000000.00);
   const [loanBalance, setLoanBalance] = useState(0.00);
   const [nodeStatus, setNodeStatus] = useState('Active / Enforced Tunnel');
+
+  // --- Integrated Chat Subsystem States ---
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatRoomId, setChatRoomId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Retained static metadata tracking parameters
   const accountMetrics = {
@@ -47,8 +57,14 @@ export default function Dashboard() {
       .slice(0, 2);
   };
 
+  // Chat Auto-Scroll Engine
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
   useEffect(() => {
     let profileChannel: any;
+    let messageChannel: any;
 
     async function loadDashboardDetails() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -58,6 +74,7 @@ export default function Dashboard() {
         return;
       }
 
+      setUserId(user.id);
       setUserEmail(user.email || 'Secure Vault Account');
 
       const hydrateProfileStates = (profileData: any) => {
@@ -77,6 +94,7 @@ export default function Dashboard() {
       };
 
       try {
+        // Fetch core profile metadata
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('balance, account_number, account_limit, loan_balance, node_status, full_name')
@@ -89,6 +107,7 @@ export default function Dashboard() {
           hydrateProfileStates(profile);
         }
 
+        // Realtime ledger synchronization hook
         profileChannel = supabase
           .channel(`live-profile-${user.id}`)
           .on(
@@ -106,6 +125,7 @@ export default function Dashboard() {
           )
           .subscribe();
 
+        // Fetch recent transactions metrics
         const { data: tx } = await supabase
           .from('transactions')
           .select('amount')
@@ -116,6 +136,42 @@ export default function Dashboard() {
         if (tx && tx.length > 0) {
           setRecentTxAmount(Number(tx[0].amount));
         }
+
+        // Initialize Chat History if active
+        const { data: room } = await supabase
+          .from('chat_rooms')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (room) {
+          setChatRoomId(room.id);
+          
+          const { data: historicMessages } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('room_id', room.id)
+            .order('created_at', { ascending: true });
+          
+          if (historicMessages) setChatMessages(historicMessages);
+
+          // Realtime subscription pipeline for incoming admin replies
+          messageChannel = supabase
+            .channel(`room-${room.id}`)
+            .on(
+              'postgres_changes',
+              { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room.id}` }, 
+              (payload) => {
+                setChatMessages((prev) => {
+                  // Safeguard against duplicate local state mutation
+                  if (prev.some(msg => msg.id === payload.new.id)) return prev;
+                  return [...prev, payload.new];
+                });
+              }
+            )
+            .subscribe();
+        }
+
       } catch (err) {
         console.error("Dashboard metric resolution fault:", err);
       } finally {
@@ -126,11 +182,75 @@ export default function Dashboard() {
     loadDashboardDetails();
 
     return () => {
-      if (profileChannel) {
-        supabase.removeChannel(profileChannel);
-      }
+      if (profileChannel) supabase.removeChannel(profileChannel);
+      if (messageChannel) supabase.removeChannel(messageChannel);
     };
   }, [router]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatMessage.trim() || !userId) return;
+
+    let activeRoomId = chatRoomId;
+
+    try {
+      // 1. Generate a secure connection room instance if one does not exist
+      if (!activeRoomId) {
+        const { data: newRoom, error: roomError } = await supabase
+          .from('chat_rooms')
+          .insert([{ user_id: userId }])
+          .select()
+          .single();
+        
+        if (roomError) {
+          console.error("Supabase Error setting up chat_room:", roomError);
+          alert(`Failed to start connection: ${roomError.message}`);
+          return;
+        }
+
+        if (newRoom) {
+          activeRoomId = newRoom.id;
+          setChatRoomId(activeRoomId);
+          
+          // Wire up streaming support on the dynamic room fallback
+          supabase
+            .channel(`room-${activeRoomId}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${activeRoomId}` }, 
+              (payload) => { 
+                setChatMessages((prev) => {
+                  if (prev.some(msg => msg.id === payload.new.id)) return prev;
+                  return [...prev, payload.new];
+                }); 
+              }
+            )
+            .subscribe();
+        } else {
+          return;
+        }
+      }
+
+      // 2. Insert message with clear structural diagnostics
+      const { error: msgError } = await supabase
+        .from('messages')
+        .insert([
+          { 
+            room_id: activeRoomId, 
+            sender_id: userId, 
+            message: chatMessage.trim() 
+          }
+        ]);
+
+      if (msgError) {
+        console.error("Supabase Error inserting message:", msgError);
+        alert(`Message blocked by server permissions: ${msgError.message}`);
+        return;
+      }
+
+      setChatMessage('');
+    } catch (err) {
+      console.error("Unexpected runtime message processing exception:", err);
+    }
+  };
 
   const handleCopyAccount = () => {
     navigator.clipboard.writeText(accountNumber);
@@ -144,7 +264,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="w-full min-h-screen bg-slate-950 p-4 sm:p-8 text-white font-sans antialiased">
+    <div className="w-full min-h-screen bg-slate-950 p-4 sm:p-8 text-white font-sans antialiased relative">
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* TOP BAR / WELCOME ROW */}
@@ -154,7 +274,6 @@ export default function Dashboard() {
               {loading ? "..." : getInitials(fullName)}
             </div>
             <div className="space-y-1">
-              {/* Added Time-based Dynamic Greeting block */}
               <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest leading-none">
                 {getGreeting()}
               </p>
@@ -163,7 +282,6 @@ export default function Dashboard() {
                 {loading ? "Loading..." : fullName}
               </h2>
               
-              {/* Account copy block */}
               <div className="flex items-center gap-2 bg-slate-950/60 border border-slate-800/80 rounded-lg px-2.5 py-1 w-fit group/top-acc">
                 <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Acc:</span>
                 <span className="text-xs font-mono font-medium text-slate-200 tracking-wider">
@@ -217,7 +335,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* INTEGRATED ACCOUNT NUMBER DISPLAY */}
               <div className="bg-slate-950/60 backdrop-blur-md p-3.5 rounded-xl border border-slate-800/60 flex justify-between items-center group/btn">
                 <div>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Account Routing Identifier</p>
@@ -237,7 +354,6 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              {/* DYNAMIC FINANCING STATS ROW */}
               <div className="grid grid-cols-2 gap-4 mt-5 pt-4 border-t border-slate-800/60">
                 <div>
                   <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1">Held Pending ▾</span>
@@ -359,6 +475,77 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* --- INTEGRATED FLOATING CHATBOX MODULE --- */}
+      <div className="fixed bottom-6 right-6 z-50 font-sans">
+        {/* Toggle Launcher Button */}
+        {!isChatOpen && (
+          <button 
+            onClick={() => setIsChatOpen(true)}
+            className="p-4 rounded-full bg-blue-600 text-white shadow-2xl hover:bg-blue-500 transition-transform hover:scale-105 flex items-center justify-center border border-blue-500/30"
+          >
+            <MessageSquare size={24} />
+          </button>
+        )}
+
+        {/* Chat Drawer Window */}
+        {isChatOpen && (
+          <div className="w-80 sm:w-96 h-[450px] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+            {/* Window Top Panel */}
+            <div className="p-4 bg-[#0b132b] border-b border-slate-800 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-sm text-white">System Support Core</h3>
+                <p className="text-[10px] text-emerald-400 font-medium tracking-wide flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Terminal Tunnel Active
+                </p>
+              </div>
+              <button onClick={() => setIsChatOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Conversation Log Stream */}
+            <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-950/40">
+              {chatMessages.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center mt-12 px-4">
+                  Send a query down the pipeline to instantiate a communications link with administrators...
+                </p>
+              ) : (
+                chatMessages.map((msg) => {
+                  const isMe = msg.sender_id === userId;
+                  return (
+                    <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[75%] px-3.5 py-2 rounded-xl text-xs leading-relaxed break-words shadow-md ${
+                        isMe 
+                          ? 'bg-blue-600 text-white rounded-br-none' 
+                          : 'bg-slate-800 text-slate-200 rounded-bl-none border border-slate-700/50'
+                      }`}>
+                        {msg.message}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Message Delivery Action Input */}
+            <form onSubmit={handleSendMessage} className="p-3 bg-[#0b132b] border-t border-slate-800 flex gap-2">
+              <input 
+                type="text" 
+                value={chatMessage}
+                onChange={(e) => setChatMessage(e.target.value)}
+                placeholder="Transmit message to desk..."
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
+              />
+              <button type="submit" className="p-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-colors flex items-center justify-center">
+                <Send size={14} />
+              </button>
+            </form>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

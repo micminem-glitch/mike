@@ -1,11 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
-
-// Initialize the privileged admin client
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! 
-);
 
 export async function POST(request: Request) {
   try {
@@ -55,7 +49,7 @@ export async function POST(request: Request) {
       const parsedAmount = parseFloat(String(amount).replace(/,/g, ''));
       
       if (!isNaN(parsedAmount) && parsedAmount > 0) {
-        // Fetch current active ledger standing
+        // Fetch current active ledger standing via RLS-bypassing admin instance
         const { data: currentProfile, error: profileFetchError } = await supabaseAdmin
           .from('profiles')
           .select('balance')
@@ -70,7 +64,6 @@ export async function POST(request: Request) {
         const standardBalance = Number(currentProfile.balance || 0);
         const typeLower = adjustmentType.toLowerCase();
 
-        // Smart, flexible evaluation targeting both explicit titles and loosely typed inputs
         const isAdditionOperation = 
           typeLower.includes('deposit') || 
           typeLower.includes('inject') || 
@@ -81,7 +74,7 @@ export async function POST(request: Request) {
           ? standardBalance + parsedAmount 
           : standardBalance - parsedAmount;
 
-        // Stage the calculated value to our update queue
+        // Stage calculated value to update queue
         profileUpdates.balance = updatedFinalBalance;
         shouldInsertTransactionLog = true;
 
@@ -124,7 +117,6 @@ export async function POST(request: Request) {
 
       if (transactionLogError) {
         console.error("❌ Non-fatal Transaction Logging Warning:", transactionLogError);
-        // The balance update was successful; we won't crash out, but we flag it in logs.
       }
     }
 
