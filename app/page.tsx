@@ -3,23 +3,29 @@
 import React from 'react';
 import Link from 'next/link';
 
+// 👇 FIX 1: If your components folder is INSIDE the app folder
+import LandingChat from './components/LandingChat'; 
+
+// 💡 TROUBLESHOOTING NOTE: 
+// If the above line still errors out, look at your file tree and swap it with one of these:
+// import LandingChat from '../../components/LandingChat'; // (Use this if you are using a src/ directory setup)
+// import LandingChat from '../components/LandingChat';    // (Use this if components is at the absolute root outside app)
+
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col font-sans antialiased selection:bg-blue-600/30">
+    <div className="min-h-screen bg-black text-white flex flex-col font-sans antialiased selection:bg-blue-600/30 relative">
       
       {/* TOP HEADER NAVIGATION */}
-      <header className="max-w-7xl w-full mx-auto px-6 sm:px-12 h-24 flex items-center justify-between">
+      <header className="max-w-7xl w-full mx-auto px-6 sm:px-12 h-24 flex items-center justify-between relative z-10">
         <div className="text-xl font-black tracking-wider uppercase text-blue-500">
           Hexafox United
         </div>
         
         <div className="flex items-center gap-6">
-          {/* Linked to login terminal */}
           <Link href="/login" className="text-sm font-semibold text-slate-400 hover:text-white transition-colors">
             Sign In
           </Link>
           
-          {/* FIXED: Linked directly to your registration page */}
           <Link href="/register" className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-lg shadow-blue-600/20 active:scale-[0.98] transition-all">
             Open Account
           </Link>
@@ -27,7 +33,7 @@ export default function LandingPage() {
       </header>
 
       {/* HERO SECTION CONTAINER */}
-      <main className="max-w-7xl w-full mx-auto flex-1 px-6 sm:px-12 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center pb-16">
+      <main className="max-w-7xl w-full mx-auto flex-1 px-6 sm:px-12 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center pb-16 relative z-10">
         
         {/* Left Content Column */}
         <div className="lg:col-span-7 space-y-8">
@@ -48,7 +54,6 @@ export default function LandingPage() {
           </p>
           
           <div className="flex flex-wrap items-center gap-4 pt-2">
-            {/* Direct primary gateway trigger link */}
             <Link href="/login" className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider px-7 py-4 rounded-xl shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all">
               Initialize Portal
             </Link>
@@ -63,7 +68,6 @@ export default function LandingPage() {
         <div className="lg:col-span-5 w-full flex justify-center lg:justify-end">
           <div className="w-full max-w-md bg-[#0b132b]/60 border border-slate-800/80 rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden backdrop-blur-sm">
             
-            {/* Simulated Window Control Accents */}
             <div className="flex items-center justify-between border-b border-slate-800/60 pb-4">
               <div className="flex gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
@@ -73,7 +77,6 @@ export default function LandingPage() {
               <span className="text-[9px] font-mono font-bold tracking-widest text-slate-600 uppercase">Live Node Engine V4.8</span>
             </div>
 
-            {/* Core Escrow Account Metrics Card */}
             <div className="bg-[#090f22] border border-slate-800/40 rounded-xl p-5 space-y-2 relative">
               <div className="flex justify-between items-center">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Secure Escrow Core Balance</span>
@@ -82,7 +85,6 @@ export default function LandingPage() {
               <div className="text-3xl font-black text-white tracking-tight">$0.00</div>
             </div>
 
-            {/* Simulated Live Connection Processing Velocity Meter */}
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
                 <span className="text-slate-500">Cryptographic Clearance Speed</span>
@@ -97,6 +99,10 @@ export default function LandingPage() {
         </div>
 
       </main>
+
+      {/* --- LIVE ANONYMOUS GUEST CHAT ENGINE WIDGET --- */}
+      <LandingChat />
+      
     </div>
   );
 }
