@@ -35,9 +35,15 @@ export default function LoginTerminalPage() {
 
       setSuccessMessage("Identity verified. Decrypting personal ledger stream...");
       
-      // 2. Route straight into the user gateway / dashboard
+      // 2. Route dynamically depending on user privilege tier
       setTimeout(() => {
-        router.push('/overview'); // Change this path if your user page lives elsewhere (e.g., '/')
+        const adminUserId = "8c2d8b13-50a4-4ac5-9428-3eb088d46907";
+        
+        if (data.user.id === adminUserId) {
+          router.push('/admin');
+        } else {
+          router.push('/overview');
+        }
       }, 1500);
 
     } catch (error: any) {

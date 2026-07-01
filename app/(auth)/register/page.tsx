@@ -189,7 +189,7 @@ export default function CreateAccountPage() {
 
             {/* Field: Government ID (Full Width Row) */}
             <div className="space-y-1.5 sm:col-span-2">
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">National Identification Number / SSN / BVN</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">National Identification Number / SSN / Drivers Licence</label>
               <div className="relative">
                 <Fingerprint className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                 <input type="text" name="idNumber" value={formData.idNumber} onChange={handleInputChange} required

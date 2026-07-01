@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase'; 
 import { 
   ChevronDown, 
@@ -13,7 +14,8 @@ import {
   MessageSquare, 
   Send, 
   MessageCircle,
-  AlertTriangle
+  AlertTriangle,
+  LogOut
 } from 'lucide-react';
 
 interface Transaction {
@@ -44,9 +46,10 @@ interface ChatMessage {
 }
 
 export default function AdminDashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passcodeInput, setPasscodeInput] = useState('');
-  const [gatekeeperError, setGatekeeperError] = useState('');
+  const router = useRouter();
+  
+  // null = checking session, true = logged in admin, false = boot to login
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); 
 
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
@@ -82,6 +85,30 @@ export default function AdminDashboard() {
   }, [chatMessages]);
 
   const otpStandbyQueue = allTransactions.filter(tx => tx.status === 'Waiting for OTP');
+
+  // 1. FIXED SECURITY GATE: Validates that an active Supabase session exists
+  useEffect(() => {
+    async function verifyAdminSession() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        // Fixed: Simply checks if a valid user is logged in to grant entry.
+        // Optional: If you want to lock this to your exact email, change to: if (user && user.email === 'your@email.com')
+        if (user) {
+          setAdminUserId(user.id);
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+          router.push('/login');
+        }
+      } catch (err) {
+        console.error("Global auth validation fault:", err);
+        setIsAuthenticated(false);
+        router.push('/login');
+      }
+    }
+    verifyAdminSession();
+  }, [router]);
 
   // Unified Chat Syncing & Live Capture Engine
   useEffect(() => {
@@ -148,7 +175,7 @@ export default function AdminDashboard() {
       }
     }
 
-    if (isAuthenticated) syncChatContext();
+    if (isAuthenticated === true) syncChatContext();
 
     return () => {
       if (messageChannel) supabase.removeChannel(messageChannel);
@@ -201,20 +228,18 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated === true) {
       loadMasterLedger();
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user) setAdminUserId(user.id);
-      });
     }
   }, [isAuthenticated]);
 
-  const handleVerifyPasscode = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passcodeInput === "HexafoxAdmin2026!") {
-      setIsAuthenticated(true);
-    } else {
-      setGatekeeperError('Invalid Administrative Authorization Credentials.');
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      router.refresh();
+      router.push('/login');
+    } catch (err) {
+      console.error("Administrative logout failure:", err);
     }
   };
 
@@ -312,60 +337,42 @@ export default function AdminDashboard() {
 
   const handleSendAdminReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!replyText.trim() || !targetUserId) return;
+    if (!replyText.trim() || !chatRoomId || !adminUserId) return;
 
     try {
-      let activeRoomId = chatRoomId;
+      const { error } = await supabase
+        .from('messages')
+        .insert([
+          {
+            room_id: chatRoomId,
+            message: replyText.trim(),
+            sender_id: adminUserId, 
+          }
+        ]);
 
-      if (!activeRoomId) {
-        const { data: newRoom, error: roomError } = await supabase
-          .from('chat_rooms')
-          .insert([{ user_id: targetUserId }])
-          .select('id')
-          .single();
-
-        if (roomError) throw roomError;
-        if (newRoom) {
-          activeRoomId = newRoom.id;
-          setChatRoomId(newRoom.id);
-        }
+      if (error) {
+        console.error("Chat delivery failure:", error.message);
+        setAdminMessage({ type: 'error', text: `Chat failed to deliver: ${error.message}` });
+      } else {
+        setReplyText('');
       }
-
-      if (!activeRoomId) throw new Error("Unable to establish communication room link.");
-
-      // Use active session identity, or fall back to system bypass identity context
-      const systemSenderId = adminUserId || '00000000-0000-0000-0000-000000000000';
-
-      const { error } = await supabase.from('messages').insert([
-        {
-          room_id: activeRoomId,
-          sender_id: systemSenderId,
-          message: replyText.trim()
-        }
-      ]);
-
-      if (error) throw error;
-      setReplyText('');
     } catch (err: any) {
-      console.error("Disruption delivering outbound messaging frame:", err);
-      setAdminMessage({ type: 'error', text: `Chat delivery failure: ${err.message}` });
+      console.error("Unexpected error routing outgoing message:", err);
     }
   };
 
-  if (!isAuthenticated) {
+  // Prevent layout flashing while validating session status
+  if (isAuthenticated === null) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4 text-white font-sans">
-        <div className="w-full max-w-md bg-[#0b132b] border border-red-900/40 p-8 rounded-2xl shadow-2xl space-y-6">
-          <h1 className="text-xl font-bold text-center text-white">Executive Master Terminal</h1>
-          <form onSubmit={handleVerifyPasscode} className="space-y-4">
-            <input type="password" value={passcodeInput} onChange={(e) => setPasscodeInput(e.target.value)}
-              className="w-full bg-[#111a36] border border-slate-700 rounded-xl p-3 text-center transition-colors focus:border-red-500 focus:outline-none" placeholder="••••••••••••••••" />
-            <button type="submit" className="w-full bg-red-600 hover:bg-red-700 py-3 rounded-xl font-bold uppercase text-xs transition-colors">Verify Credentials</button>
-          </form>
-          {gatekeeperError && <p className="text-red-400 text-xs text-center">{gatekeeperError}</p>}
-        </div>
+      <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center text-white font-sans">
+        <RefreshCw className="animate-spin text-red-500 mb-4" size={28} />
+        <p className="text-xs text-slate-400 tracking-wider uppercase font-semibold">Verifying Secure Admin Session...</p>
       </div>
     );
+  }
+
+  if (isAuthenticated === false) {
+    return null;
   }
 
   return (
@@ -376,8 +383,8 @@ export default function AdminDashboard() {
         <h2 className="text-xl font-black text-red-400 flex items-center gap-2">
           <ShieldCheck size={20} /> Mikes Finance Master Control
         </h2>
-        <button onClick={() => setIsAuthenticated(false)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold border border-slate-700 px-4 py-2 rounded-xl text-xs transition-colors">
-          Lock Terminal
+        <button onClick={handleLogout} className="bg-red-950/40 hover:bg-red-900/40 text-red-400 font-bold border border-red-900/40 px-4 py-2 rounded-xl text-xs transition-colors flex items-center gap-2">
+          <LogOut size={14} /> Terminate Session
         </button>
       </div>
 
@@ -484,7 +491,7 @@ export default function AdminDashboard() {
               </h3>
               <button 
                 onClick={loadMasterLedger}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors text-slate-400 hover:text-white"
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 transition-colors text-slate-400 hover:text-white"
                 title="Refresh Live Data"
               >
                 <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />

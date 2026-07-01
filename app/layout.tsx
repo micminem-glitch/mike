@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react"; // Pure Next.js TypeScript approach
+import { ReactNode } from "react";
 import "./globals.css";
 import Sidebar from "./components/Sidebar";
 import { usePathname } from "next/navigation";
@@ -9,9 +9,14 @@ import { Search, Bell, Settings } from "lucide-react";
 export default function RootLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   
-  // Defines exactly which pages are public and shouldn't have menus
+  // 1. Defines public authentication screens
   const isPublicPage = pathname === "/" || pathname === "/login" || pathname === "/register";
-  const showDashboardLayout = !isPublicPage;
+  
+  // 2. Defines admin terminal spaces (handles sub-routes like /admin/settings too)
+  const isAdminPage = pathname?.startsWith("/admin") ?? false;
+  
+  // Only show the standard client menu layout if it's NOT a public page AND NOT an admin page
+  const showDashboardLayout = !isPublicPage && !isAdminPage;
 
   return (
     <html lang="en">
@@ -20,13 +25,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* The outer flex container centers and scales your panels naturally */}
         <div className="flex min-h-screen w-full relative bg-slate-950">
           
-          {/* 1. Sidebar renders here side-by-side with your main views */}
+          {/* Sidebar renders here side-by-side with client views */}
           {showDashboardLayout && <Sidebar />}
 
-          {/* 2. Main content block fills the rest of the available screen space */}
+          {/* Main content block fills the rest of the available screen space */}
           <div className="flex-1 flex flex-col min-h-screen min-w-0 w-full">
             
-            {/* 3. Top Navbar — Restored and visible on both user and admin paths */}
+            {/* Top Navbar — Visible ONLY on standard user dashboard paths */}
             {showDashboardLayout && (
               <header className="h-16 bg-[#0d1b2a] border-b border-slate-700/40 flex items-center justify-between px-6 z-10 sticky top-0">
                 <div className="flex items-center gap-4 bg-slate-900/60 px-3 py-1.5 rounded-xl w-40 sm:w-72 border border-slate-800">
@@ -48,7 +53,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </header>
             )}
 
-            {/* 4. Display Page Content injection target */}
+            {/* Display Page Content injection target */}
             <main className="w-full flex-1 bg-slate-950">
               {children}
             </main>
@@ -57,5 +62,5 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </div>
       </body>
     </html>
-  );
+  ); 
 }
